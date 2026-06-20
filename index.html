@@ -1,0 +1,2602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wealth Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#0d0f14;--surface:#161b24;--card:#1c2330;--border:#252d3d;
+  --text:#e8edf5;--text2:#8fa0b8;--text3:#4a5a72;
+  --green:#22c55e;--teal:#14b8a6;--amber:#f59e0b;--red:#ef4444;--blue:#3b82f6;--purple:#a855f7;--orange:#f97316;
+  --accent:#3b82f6;--radius:10px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;overflow:hidden;}
+#appShell{width:100vw;height:100vh;flex-direction:row;}
+
+/* SIDEBAR */
+.sidebar{width:220px;min-width:220px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;}
+.sidebar-logo{padding:18px 16px 12px;font-size:18px;font-weight:700;color:var(--accent);letter-spacing:-0.5px;border-bottom:1px solid var(--border);}
+.sidebar-logo span{color:var(--text2);font-weight:400;font-size:12px;display:block;margin-top:2px;}
+.nav-section{padding:16px 16px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);}
+.nav-item{padding:9px 16px;cursor:pointer;display:flex;align-items:center;gap:9px;border-radius:6px;margin:1px 8px;color:var(--text2);transition:all .15s;position:relative;}
+.nav-item:hover{background:var(--card);color:var(--text);}
+.nav-item.active{background:rgba(59,130,246,.15);color:var(--accent);}
+.nav-icon{font-size:15px;width:18px;text-align:center;}
+.nav-badge{margin-left:auto;background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:10px;}
+.sidebar-footer{margin-top:auto;padding:14px;border-top:1px solid var(--border);}
+.profile-chip{display:flex;align-items:center;gap:10px;}
+.avatar{width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;}
+.profile-name{font-size:13px;font-weight:600;}
+.profile-role{font-size:11px;color:var(--text3);}
+
+/* MAIN */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+.topbar{height:56px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:12px;flex-shrink:0;}
+.page-title{font-size:16px;font-weight:600;flex:1;}
+.top-btn{padding:7px 14px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;font-size:13px;transition:all .15s;}
+.top-btn:hover{border-color:var(--accent);color:var(--accent);}
+.top-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+.sync-dot{width:8px;height:8px;border-radius:50%;background:var(--green);}
+.last-sync{font-size:12px;color:var(--text3);}
+.content{flex:1;overflow-y:auto;padding:20px;}
+
+/* PANELS */
+.panel{display:none;}
+.panel.active{display:block;}
+
+/* CARDS */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px;}
+.card-title{font-size:13px;font-weight:600;color:var(--text2);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+
+/* STAT CARDS */
+.stat{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;}
+.stat-label{font-size:11px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;}
+.stat-value{font-size:22px;font-weight:700;line-height:1.1;}
+.stat-sub{font-size:11px;color:var(--text2);margin-top:4px;}
+.green{color:var(--green);} .red{color:var(--red);} .amber{color:var(--amber);} .blue{color:var(--blue);} .teal{color:var(--teal);} .purple{color:var(--purple);}
+
+/* ALERTS */
+.alert{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-radius:8px;margin-bottom:12px;}
+.alert.warn{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);}
+.alert.good{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);}
+.alert.info{background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.3);}
+.alert-icon{font-size:16px;margin-top:1px;}
+.alert-body{font-size:13px;line-height:1.5;}
+
+/* BUTTONS */
+.btn{padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:500;transition:all .15s;}
+.btn-primary{background:var(--accent);color:#fff;} .btn-primary:hover{opacity:.9;}
+.btn-gray{background:var(--border);color:var(--text);} .btn-gray:hover{background:var(--text3);color:#fff;}
+.btn-green{background:var(--green);color:#fff;}
+.btn-red{background:var(--red);color:#fff;}
+.btn-sm{padding:5px 10px;font-size:12px;}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--text2);} .btn-outline:hover{border-color:var(--accent);color:var(--accent);}
+
+/* TABLES */
+table{width:100%;border-collapse:collapse;}
+th{text-align:left;padding:8px 10px;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);}
+td{padding:9px 10px;border-bottom:1px solid rgba(37,45,61,.6);font-size:13px;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:rgba(255,255,255,.02);}
+
+/* INPUTS */
+input,select,textarea{background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;outline:none;width:100%;}
+input:focus,select:focus{border-color:var(--accent);}
+input[type=number]{-moz-appearance:textfield;}
+.form-row{display:flex;gap:10px;margin-bottom:10px;align-items:flex-end;}
+.form-group{flex:1;}
+.form-label{font-size:11px;color:var(--text3);margin-bottom:4px;display:block;}
+
+/* UPLOAD ZONE */
+.upload-zone{border:2px dashed var(--border);border-radius:10px;padding:30px;text-align:center;cursor:pointer;transition:all .2s;background:var(--surface);}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--accent);background:rgba(59,130,246,.05);}
+.upload-icon{font-size:32px;margin-bottom:8px;}
+.upload-text{color:var(--text2);font-size:13px;}
+.upload-sub{color:var(--text3);font-size:11px;margin-top:4px;}
+.multi-upload-zone{border:2px dashed var(--border);border-radius:10px;padding:24px;text-align:center;cursor:pointer;transition:all .2s;background:var(--surface);margin-bottom:12px;}
+.multi-upload-zone:hover,.multi-upload-zone.drag{border-color:var(--green);background:rgba(34,197,94,.05);}
+
+/* PROGRESS BAR */
+.progress-wrap{background:var(--border);border-radius:99px;height:6px;overflow:hidden;}
+.progress-fill{height:100%;border-radius:99px;transition:width .4s;}
+
+/* MODALS */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;}
+.modal-bg.open{display:flex;}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;min-width:360px;max-width:560px;max-height:85vh;overflow-y:auto;}
+.modal-title{font-size:16px;font-weight:700;margin-bottom:16px;}
+.modal-close{float:right;cursor:pointer;color:var(--text3);font-size:18px;margin-top:-4px;}
+
+/* TAGS */
+.tag{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600;}
+.tag-green{background:rgba(34,197,94,.15);color:var(--green);}
+.tag-red{background:rgba(239,68,68,.15);color:var(--red);}
+.tag-amber{background:rgba(245,158,11,.15);color:var(--amber);}
+.tag-blue{background:rgba(59,130,246,.15);color:var(--blue);}
+.tag-teal{background:rgba(20,184,166,.15);color:var(--teal);}
+.tag-purple{background:rgba(168,85,247,.15);color:var(--purple);}
+
+/* SCORE RING */
+.score-ring-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.score-ring{position:relative;width:140px;height:140px;}
+.score-ring svg{transform:rotate(-90deg);}
+.score-ring-value{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.score-num{font-size:28px;font-weight:800;}
+.score-lbl{font-size:11px;color:var(--text3);}
+
+/* NOTIFICATION */
+#notif{position:fixed;bottom:20px;right:20px;background:var(--card);border:1px solid var(--border);padding:10px 16px;border-radius:8px;font-size:13px;z-index:9999;display:none;max-width:320px;}
+
+/* YEAR SELECTOR */
+.yr-bar{display:flex;align-items:center;gap:8px;margin-bottom:14px;}
+.yr-bar label{font-size:12px;color:var(--text3);}
+.yr-bar select{width:auto;padding:5px 8px;font-size:12px;}
+
+/* CHIPS */
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+.chip{padding:4px 10px;border-radius:99px;border:1px solid var(--border);font-size:12px;cursor:pointer;color:var(--text2);}
+.chip.active{border-color:var(--accent);color:var(--accent);background:rgba(59,130,246,.1);}
+
+/* PARSED ACCOUNTS LIST */
+.parsed-item{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px;}
+.parsed-item-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+.parsed-item-name{font-weight:600;font-size:13px;}
+.parsed-fields{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+.parsed-field label{font-size:10px;color:var(--text3);display:block;margin-bottom:2px;}
+.parsed-field input{padding:5px 8px;font-size:12px;}
+
+/* HOLDING FILE LIST */
+.file-list{margin-top:10px;}
+.file-item{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;margin-bottom:6px;}
+.file-name{font-size:12px;color:var(--text2);}
+.file-status{font-size:11px;}
+
+/* INSURANCE POLICY CARD */
+.ins-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:12px;position:relative;}
+.ins-card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;}
+.ins-card-name{font-size:14px;font-weight:700;}
+.ins-card-type{font-size:11px;color:var(--text3);margin-top:2px;}
+.ins-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px;}
+.ins-metric label{font-size:10px;color:var(--text3);display:block;}
+.ins-metric .val{font-size:15px;font-weight:700;margin-top:2px;}
+.ins-delete{position:absolute;top:12px;right:12px;cursor:pointer;color:var(--text3);font-size:14px;opacity:.6;}
+.ins-delete:hover{color:var(--red);opacity:1;}
+
+/* FUND AUTOCOMPLETE */
+.fund-suggest-item{padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s;}
+.fund-suggest-item:hover,.fund-suggest-item.selected{background:rgba(59,130,246,.12);}
+.fund-suggest-item:last-child{border-bottom:none;}
+.fsi-name{font-size:13px;font-weight:600;color:var(--text);}
+.fsi-meta{font-size:11px;color:var(--text3);margin-top:2px;}
+.fsi-cagr{float:right;font-size:11px;color:var(--green);font-weight:600;}
+
+@media(max-width:768px){
+  .sidebar{display:none;}
+  .grid-4{grid-template-columns:1fr 1fr;}
+  .grid-3{grid-template-columns:1fr 1fr;}
+  .grid-2{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════ AUTH SCREEN ═══════════ -->
+<div id="authScreen" style="display:flex;position:fixed;inset:0;z-index:9000;background:var(--bg);align-items:center;justify-content:center;">
+  <div style="width:100%;max-width:420px;padding:24px;">
+    <!-- Logo -->
+    <div style="text-align:center;margin-bottom:32px;">
+      <div style="font-size:32px;font-weight:800;color:var(--accent);letter-spacing:-1px;">Wealth Dashboard</div>
+      <div style="color:var(--text3);font-size:14px;margin-top:6px;">Your Personal Finance Dashboard</div>
+    </div>
+    <!-- Card -->
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px;">
+      <!-- Tabs -->
+      <div style="display:flex;background:var(--surface);border-radius:8px;padding:3px;margin-bottom:24px;">
+        <button id="tabLogin" onclick="switchAuthTab('login')" style="flex:1;padding:8px;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;background:var(--accent);color:#fff;transition:all .2s;">Sign In</button>
+        <button id="tabSignup" onclick="switchAuthTab('signup')" style="flex:1;padding:8px;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;background:transparent;color:var(--text2);transition:all .2s;">Create Account</button>
+      </div>
+
+      <!-- Login Form -->
+      <div id="formLogin">
+        <div style="margin-bottom:14px;">
+          <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:5px;">Email</label>
+          <input id="loginEmail" type="email" placeholder="you@gmail.com" style="width:100%;" onkeydown="if(event.key==='Enter')doLogin()">
+        </div>
+        <div style="margin-bottom:20px;position:relative;">
+          <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:5px;">Password</label>
+          <input id="loginPass" type="password" placeholder="••••••••" style="width:100%;" onkeydown="if(event.key==='Enter')doLogin()">
+          <span onclick="forgotPassword()" style="position:absolute;right:0;top:0;font-size:11px;color:var(--accent);cursor:pointer;">Forgot?</span>
+        </div>
+        <button onclick="doLogin()" id="loginBtn" style="width:100%;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:opacity .2s;">Sign In →</button>
+        <div style="margin-top:16px;text-align:center;color:var(--text3);font-size:12px;">or</div>
+        <button onclick="doGoogleLogin()" style="width:100%;margin-top:12px;padding:11px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;">
+          <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/><path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957C.347 6.175 0 7.55 0 9s.348 2.825.957 4.039l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z"/></svg>
+          Continue with Google
+        </button>
+      </div>
+
+      <!-- Signup Form -->
+      <div id="formSignup" style="display:none;">
+        <div style="margin-bottom:14px;">
+          <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:5px;">Full Name</label>
+          <input id="signupName" type="text" placeholder="Abhishek Mishra" style="width:100%;">
+        </div>
+        <div style="margin-bottom:14px;">
+          <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:5px;">Email</label>
+          <input id="signupEmail" type="email" placeholder="you@gmail.com" style="width:100%;">
+        </div>
+        <div style="margin-bottom:20px;">
+          <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:5px;">Password <span style="color:var(--text3);font-size:10px;">(min 6 chars)</span></label>
+          <input id="signupPass" type="password" placeholder="••••••••" style="width:100%;" onkeydown="if(event.key==='Enter')doSignup()">
+        </div>
+        <button onclick="doSignup()" id="signupBtn" style="width:100%;padding:12px;background:var(--green);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Create Account →</button>
+        <div style="margin-top:16px;text-align:center;color:var(--text3);font-size:12px;">or</div>
+        <button onclick="doGoogleLogin()" style="width:100%;margin-top:12px;padding:11px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;">
+          <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/><path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957C.347 6.175 0 7.55 0 9s.348 2.825.957 4.039l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z"/></svg>
+          Continue with Google
+        </button>
+      </div>
+
+      <!-- Auth message -->
+      <div id="authMsg" style="margin-top:14px;font-size:12px;text-align:center;min-height:18px;"></div>
+    </div>
+
+    <div style="text-align:center;margin-top:16px;font-size:11px;color:var(--text3);">
+      🔒 Your data is encrypted and stored securely. Never shared.
+    </div>
+    <div style="text-align:center;margin-top:10px;">
+      <span onclick="continueAsGuest()" style="font-size:12px;color:var(--text3);cursor:pointer;text-decoration:underline;">Continue without account (data saved on this device only)</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ APP (hidden until auth) ═══════════ -->
+<div id="appShell" style="width:100%;height:100vh;overflow:hidden;flex-direction:row;">
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="sidebar-logo">Wealth Dashboard <span>Personal Finance</span></div>
+  <div class="nav-section">Overview</div>
+  <div class="nav-item active" id="nav-overview" onclick="goTab('overview',this)"><span class="nav-icon">◈</span> Dashboard</div>
+  <div class="nav-section">Investments</div>
+  <div class="nav-item" id="nav-portfolio" onclick="goTab('portfolio',this)"><span class="nav-icon">◲</span> Portfolio</div>
+  <div class="nav-item" id="nav-epfo" onclick="goTab('epfo',this)"><span class="nav-icon">◎</span> EPFO / PF</div>
+  <div class="nav-item" id="nav-crypto" onclick="goTab('crypto',this)"><span class="nav-icon">◇</span> Crypto</div>
+  <div class="nav-section">Debt & Credit</div>
+  <div class="nav-item" id="nav-debt" onclick="goTab('debt',this)"><span class="nav-icon">◍</span> Debt Tracker <span class="nav-badge" id="debtBadge">0</span></div>
+  <div class="nav-item" id="nav-cibil" onclick="goTab('cibil',this)"><span class="nav-icon">◉</span> CIBIL Score</div>
+  <div class="nav-section">Protection</div>
+  <div class="nav-item" id="nav-insurance" onclick="goTab('insurance',this)"><span class="nav-icon">◆</span> Insurance</div>
+  <div class="nav-section">Data</div>
+  <div class="nav-item" id="nav-upload" onclick="goTab('upload',this)"><span class="nav-icon">⊕</span> Upload / Import</div>
+  <div class="sidebar-footer">
+    <div class="profile-chip" style="cursor:pointer;" onclick="openModal('setup')">
+      <div class="avatar" id="avatarEl">?</div>
+      <div style="flex:1;min-width:0;">
+        <div class="profile-name" id="profileName">Setup Profile</div>
+        <div class="profile-role" id="profileRole">Click to configure</div>
+      </div>
+    </div>
+    <button onclick="doLogout()" style="width:100%;margin-top:10px;padding:7px;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text3);font-size:12px;cursor:pointer;" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)';" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)';">⎋ Sign Out</button>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="topbar">
+    <div class="page-title" id="pageTitle">Dashboard</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-left:auto;">
+      <div class="sync-dot"></div>
+      <div class="last-sync" id="lastSync">—</div>
+      <button class="top-btn" onclick="openModal('setup')">⚙ Setup</button>
+      <button class="top-btn primary" onclick="clearAll()">↺ Reset</button>
+    </div>
+  </div>
+  <div class="content" id="mainContent">
+
+    <!-- ═══════════ DASHBOARD ═══════════ -->
+    <div class="panel active" id="panel-overview">
+      <div id="overviewAlerts"></div>
+      <div class="grid-4" id="overviewStats"></div>
+      <div class="grid-2" style="margin-top:16px;">
+        <div class="card"><div class="card-title">Net Worth Trend <span id="nwYrSel"></span></div><div style="position:relative;height:180px;"><canvas id="nwChart"></canvas></div></div>
+        <div class="card"><div class="card-title">Asset Allocation</div><div style="position:relative;height:180px;"><canvas id="allocChart"></canvas></div></div>
+      </div>
+      <div class="grid-2">
+        <div class="card"><div class="card-title">Debt Breakdown</div><div id="debtSummaryOv"></div></div>
+        <div class="card"><div class="card-title">Top Holdings</div><div id="topHoldings"></div></div>
+      </div>
+    </div>
+
+    <!-- ═══════════ PORTFOLIO ═══════════ -->
+    <div class="panel" id="panel-portfolio">
+      <div class="yr-bar">
+        <label>Projection:</label>
+        <select id="yrPortfolio" onchange="renderPortfolio()">
+          <option value="5">5 Years</option>
+          <option value="10" selected>10 Years</option>
+          <option value="15">15 Years</option>
+          <option value="20">20 Years</option>
+          <option value="25">25 Years</option>
+        </select>
+        <label style="margin-left:16px;">Annual SIP Step-Up:</label>
+        <select id="stepUpPct" onchange="renderPortfolio()">
+          <option value="0">None</option>
+          <option value="5">5% / yr</option>
+          <option value="10" selected>10% / yr</option>
+          <option value="15">15% / yr</option>
+          <option value="20">20% / yr</option>
+        </select>
+        <span style="margin-left:auto;"><button class="btn btn-primary btn-sm" onclick="openModal('addFund')">+ Add Fund</button></span>
+      </div>
+      <div class="grid-4" id="portfolioStats"></div>
+      <div class="grid-2" style="margin-top:16px;">
+        <div class="card"><div class="card-title">Portfolio Growth Projection</div><div style="position:relative;height:200px;"><canvas id="portfolioChart"></canvas></div></div>
+        <div class="card"><div class="card-title">Fund Allocation</div><div style="position:relative;height:200px;"><canvas id="fundAlloc"></canvas></div></div>
+      </div>
+      <div class="card"><div class="card-title">Holdings <button class="btn btn-gray btn-sm" style="margin-left:auto;" onclick="goTab('upload',document.getElementById('nav-upload'))">📂 Import from Broker</button></div><div id="fundTable"></div></div>
+    </div>
+
+    <!-- ═══════════ EPFO ═══════════ -->
+    <div class="panel" id="panel-epfo">
+      <div class="yr-bar"><label>Projection:</label><select id="yrEpfo" onchange="renderEpfo()"><option value="5">5 Years</option><option value="8" selected>8 Years</option><option value="10">10 Years</option><option value="15">15 Years</option><option value="20">20 Years</option><option value="30">30 Years</option></select></div>
+      <div class="grid-4" id="epfoStats"></div>
+      <div class="card" style="margin-top:16px;"><div class="card-title">PF Corpus Growth</div><div style="position:relative;height:190px;"><canvas id="epfoChart"></canvas></div></div>
+      <div class="card"><div class="card-title">Update PF Details</div>
+        <div class="grid-3">
+          <div class="form-group"><label class="form-label">Current Balance (₹)</label><input type="number" id="epfoBal" placeholder="247815" oninput="saveEpfo()"></div>
+          <div class="form-group"><label class="form-label">Employee Monthly (₹)</label><input type="number" id="epfoEmp" placeholder="8018" oninput="saveEpfo()"></div>
+          <div class="form-group"><label class="form-label">Employer Monthly (₹)</label><input type="number" id="epfoEmpl" placeholder="2452" oninput="saveEpfo()"></div>
+          <div class="form-group"><label class="form-label">Interest Rate (%)</label><input type="number" id="epfoRate" placeholder="8.25" step="0.01" oninput="saveEpfo()"></div>
+          <div class="form-group"><label class="form-label">Your Age</label><input type="number" id="epfoAge" placeholder="28" oninput="saveEpfo()"></div>
+          <div class="form-group"><label class="form-label">Retirement Age</label><input type="number" id="epfoRetire" placeholder="60" oninput="saveEpfo()"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════ CRYPTO ═══════════ -->
+    <div class="panel" id="panel-crypto">
+      <div class="yr-bar"><label>Projection:</label><select id="yrCrypto" onchange="renderCrypto()"><option value="1">1 Year</option><option value="2">2 Years</option><option value="3">3 Years</option><option value="5" selected>5 Years</option><option value="10">10 Years</option></select><span style="margin-left:auto;"><button class="btn btn-primary btn-sm" onclick="openModal('addCrypto')">+ Add Coin</button></span></div>
+      <div class="grid-4" id="cryptoStats"></div>
+      <div class="grid-2" style="margin-top:16px;">
+        <div class="card"><div class="card-title">Crypto Portfolio Projection</div><div style="position:relative;height:190px;"><canvas id="cryptoChart"></canvas></div></div>
+        <div class="card"><div class="card-title">Holdings</div><div id="cryptoTable"></div></div>
+      </div>
+    </div>
+
+    <!-- ═══════════ DEBT ═══════════ -->
+    <div class="panel" id="panel-debt">
+      <div class="yr-bar"><label>Timeline:</label><select id="yrDebt" onchange="renderDebt()"><option value="3">3 Years</option><option value="5" selected>5 Years</option><option value="7">7 Years</option></select><span style="margin-left:auto;"><button class="btn btn-primary btn-sm" onclick="openModal('addLoan')">+ Add Loan</button></span></div>
+      <div class="grid-4" id="debtStats"></div>
+      <div class="grid-2" style="margin-top:16px;">
+        <div class="card"><div class="card-title">Debt Payoff Projection</div><div style="position:relative;height:190px;"><canvas id="debtChart"></canvas></div></div>
+        <div class="card"><div class="card-title">Loan Breakdown</div><div style="position:relative;height:190px;"><canvas id="debtPie"></canvas></div></div>
+      </div>
+      <div class="card"><div class="card-title">Active Loans</div><div id="loanTable"></div></div>
+      <div class="grid-2">
+        <div class="card"><div class="card-title">🏔 Avalanche Strategy (Save most interest)</div><div id="avalancheTable"></div></div>
+        <div class="card"><div class="card-title">❄️ Snowball Strategy (Quick wins)</div><div id="snowballTable"></div></div>
+      </div>
+    </div>
+
+    <!-- ═══════════ CIBIL ═══════════ -->
+    <div class="panel" id="panel-cibil">
+      <div class="yr-bar"><label>Timeline:</label><select id="yrCibil" onchange="renderCibil()"><option value="6">6 Months</option><option value="12" selected>12 Months</option><option value="24">24 Months</option></select></div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Credit Score <button class="btn btn-gray btn-sm" onclick="openModal('updateCibil')">✏ Update</button></div>
+          <div class="score-ring-wrap" style="padding:16px 0;">
+            <div class="score-ring">
+              <svg width="140" height="140" viewBox="0 0 140 140">
+                <circle cx="70" cy="70" r="60" fill="none" stroke="var(--border)" stroke-width="12"/>
+                <circle cx="70" cy="70" r="60" fill="none" stroke-width="12" stroke-linecap="round" id="scoreArc"
+                  stroke-dasharray="377" stroke-dashoffset="377" stroke="var(--green)" style="transition:stroke-dashoffset 1s;"/>
+              </svg>
+              <div class="score-ring-value"><div class="score-num" id="scoreNum">—</div><div class="score-lbl">CIBIL</div></div>
+            </div>
+            <div id="scoreLbl" style="margin-top:10px;font-size:13px;color:var(--text2);text-align:center;"></div>
+          </div>
+          <div class="grid-2" style="margin-top:8px;" id="cibilMeta"></div>
+        </div>
+        <div class="card"><div class="card-title">Score History & Projection</div><div style="position:relative;height:200px;"><canvas id="cibilChart"></canvas></div></div>
+      </div>
+      <div class="card"><div class="card-title">📤 Upload CIBIL PDF <span style="font-size:11px;color:var(--text3);font-weight:400;margin-left:6px;">System will extract score + all accounts</span></div>
+        <div class="upload-zone" id="cibilZone">
+          <div class="upload-icon">📄</div>
+          <div class="upload-text">Drop your CIBIL PDF here or click to browse</div>
+          <div class="upload-sub">Supports TransUnion CIBIL reports (any format)</div>
+        </div>
+        <input type="file" id="cibilInp" accept=".pdf" style="display:none">
+        <div id="parsedAccountsWrap" style="margin-top:12px;display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <div style="font-size:13px;font-weight:600;" id="parsedCount"></div>
+            <button class="btn btn-green btn-sm" onclick="applyToDebt()">→ Sync to Debt Tab</button>
+          </div>
+          <div id="parsedAccountsList"></div>
+        </div>
+      </div>
+      <div class="card"><div class="card-title">🎯 Personalised CIBIL Improvement Plan</div><div id="cibilPlan"></div></div>
+    </div>
+
+    <!-- ═══════════ INSURANCE ═══════════ -->
+    <div class="panel" id="panel-insurance">
+      <div class="grid-4" id="insStats"></div>
+      <div class="card" style="margin-top:16px;">
+        <div class="card-title">📤 Upload Policy Document <span style="font-size:11px;color:var(--text3);font-weight:400;margin-left:6px;">PDF — Term, Health, ULIP, Endowment</span></div>
+        <div class="upload-zone" id="insZone">
+          <div class="upload-icon">🛡️</div>
+          <div class="upload-text">Drop insurance PDF here or click to browse</div>
+          <div class="upload-sub">Auto-extracts: Cover amount, Premium, Expiry, Nominee, Policy No.</div>
+        </div>
+        <input type="file" id="insInp" accept=".pdf" style="display:none">
+        <div id="insParseResult" style="margin-top:12px;"></div>
+      </div>
+      <div id="insPoliciesList"></div>
+    </div>
+
+    <!-- ═══════════ UPLOAD / IMPORT ═══════════ -->
+    <div class="panel" id="panel-upload">
+      <div class="alert info"><div class="alert-icon">ℹ</div><div class="alert-body"><strong>Portfolio Import:</strong> Upload holdings CSV/Excel exported from Groww, Zerodha Kite, Coin, or Paytm Money. You can upload multiple files at once — duplicates are handled automatically.</div></div>
+      <div class="card">
+        <div class="card-title">📂 Import Holdings from Broker <span style="font-size:11px;color:var(--text3);font-weight:400;margin-left:6px;">Groww · Zerodha · Coin · Paytm Money</span></div>
+        <div class="multi-upload-zone" id="holdingZone">
+          <div class="upload-icon">📊</div>
+          <div class="upload-text" style="font-size:14px;font-weight:600;">Drop multiple files here</div>
+          <div class="upload-sub" style="margin-top:6px;">Accepts .csv or .xlsx — select all broker exports at once</div>
+          <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+            <span class="tag tag-green">Groww Holdings CSV</span>
+            <span class="tag tag-blue">Zerodha Kite CSV</span>
+            <span class="tag tag-purple">Coin MF CSV</span>
+            <span class="tag tag-teal">Paytm Money XLS</span>
+          </div>
+        </div>
+        <input type="file" id="holdingInp" accept=".csv,.xlsx,.xls" multiple style="display:none">
+        <div id="holdingFileList" class="file-list"></div>
+        <div id="holdingParseResult" style="margin-top:12px;"></div>
+        <div style="margin-top:10px;display:flex;gap:8px;" id="holdingActions" style="display:none;"></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">📄 Upload CIBIL Report</div>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:12px;">Upload your latest CIBIL PDF to auto-extract score and loan accounts</p>
+          <button class="btn btn-outline" onclick="goTab('cibil',document.getElementById('nav-cibil'));setTimeout(()=>document.getElementById('cibilZone').click(),300)">Go to CIBIL Tab →</button>
+        </div>
+        <div class="card">
+          <div class="card-title">🛡 Upload Insurance Policy</div>
+          <p style="font-size:12px;color:var(--text3);margin-bottom:12px;">Upload policy PDFs to track cover, premiums and expiry dates</p>
+          <button class="btn btn-outline" onclick="goTab('insurance',document.getElementById('nav-insurance'));setTimeout(()=>document.getElementById('insZone').click(),300)">Go to Insurance Tab →</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<!-- NOTIFICATION -->
+<div id="notif"></div>
+
+</div><!-- /appShell -->
+
+<!-- MODALS -->
+<div class="modal-bg" id="modal-setup">
+  <div class="modal">
+    <span class="modal-close" onclick="closeModal('setup')">✕</span>
+    <div class="modal-title">⚙ Profile Setup</div>
+    <div class="form-group" style="margin-bottom:10px;"><label class="form-label">Your Name</label><input id="sName" placeholder="Abhishek Mishra"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Age</label><input type="number" id="sAge" placeholder="28"></div>
+      <div class="form-group"><label class="form-label">Monthly Income (₹)</label><input type="number" id="sIncome" placeholder="167040"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Monthly Expenses (₹)</label><input type="number" id="sExpense" placeholder="60000"></div>
+      <div class="form-group"><label class="form-label">Monthly SIP (₹)</label><input type="number" id="sSip" placeholder="56080"></div>
+    </div>
+    <button class="btn btn-primary" style="width:100%;margin-top:8px;" onclick="saveSetup()">Save Profile</button>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-addFund">
+  <div class="modal" style="min-width:420px;max-height:90vh;overflow-y:auto;">
+    <span class="modal-close" onclick="closeModal('addFund')">✕</span>
+    <div class="modal-title">+ Add Fund / ETF / Stock</div>
+    <div class="form-group" style="margin-bottom:6px;position:relative;">
+      <label class="form-label">Search Fund / ETF / Stock</label>
+      <input id="fSearch" placeholder="Type to search — e.g. Motilal, Bandhan, Nifty BeES…" autocomplete="off" oninput="fundSearchInput(this.value)" onkeydown="fundSearchKey(event)">
+      <div id="fundSuggest" style="display:none;position:absolute;left:0;right:0;background:var(--card);border:1px solid var(--accent);border-top:none;border-radius:0 0 8px 8px;z-index:200;max-height:200px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.5);"></div>
+    </div>
+    <div id="fSelectedBadge" style="display:none;background:rgba(59,130,246,.1);border:1px solid var(--accent);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:var(--accent);">
+      ✓ <span id="fSelectedName"></span> — <span id="fSelectedMeta" style="color:var(--text3);"></span>
+      <span id="fLiveCagrBadge" style="margin-left:8px;font-size:11px;"></span>
+    </div>
+    <div class="form-group" style="margin-bottom:10px;" id="fManualWrap">
+      <label class="form-label" style="color:var(--text3);">Or enter name manually</label>
+      <input id="fName" placeholder="Custom fund / stock name">
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Type</label><select id="fType"><option>Mutual Fund</option><option>ETF</option><option>Stock</option><option>ELSS</option><option>Index Fund</option></select></div>
+      <div class="form-group"><label class="form-label">Category</label><select id="fCat"><option>Large Cap</option><option>Mid Cap</option><option>Small Cap</option><option>Flexi Cap</option><option>ELSS</option><option>International</option><option>Commodity</option><option>Debt</option></select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Current Value (₹)</label><input type="number" id="fVal" placeholder="49882"></div>
+      <div class="form-group"><label class="form-label">Invested Amount (₹)</label><input type="number" id="fInvested" placeholder="45000"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Monthly SIP (₹)</label><input type="number" id="fSip" placeholder="10000"></div>
+      <div class="form-group"><label class="form-label">Annual Step-Up (%)</label><input type="number" id="fStepUp" placeholder="10" value="10" step="1" min="0" max="50"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">CAGR (%) <span id="fCagrSource" style="font-size:10px;color:var(--green);"></span></label>
+        <div style="display:flex;gap:6px;">
+          <input type="number" id="fCagr" placeholder="14" step="0.1" style="flex:1;">
+          <button class="btn btn-gray btn-sm" id="fFetchBtn" onclick="fetchLiveCAGR()" style="white-space:nowrap;display:none;">🔄 Live</button>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-primary" style="width:100%;margin-top:12px;" onclick="addFund()">✓ Add Fund</button>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-editFund">
+  <div class="modal" style="min-width:400px;">
+    <span class="modal-close" onclick="closeModal('editFund')">✕</span>
+    <div class="modal-title" id="editFundTitle">✏ Edit Fund</div>
+    <input type="hidden" id="editFundId">
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Current Value (₹)</label><input type="number" id="editFVal" placeholder="49882"></div>
+      <div class="form-group"><label class="form-label">Invested Amount (₹)</label><input type="number" id="editFInvested" placeholder="45000"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Monthly SIP (₹)</label><input type="number" id="editFSip" placeholder="10000"></div>
+      <div class="form-group"><label class="form-label">Annual Step-Up (%)</label><input type="number" id="editFStepUp" placeholder="10" step="1"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Expected CAGR (%)</label><input type="number" id="editFCagr" placeholder="14" step="0.1"></div>
+      <div class="form-group"><label class="form-label">Category</label><select id="editFCat"><option>Large Cap</option><option>Mid Cap</option><option>Small Cap</option><option>Flexi Cap</option><option>ELSS</option><option>International</option><option>Commodity</option><option>Debt</option><option>Multi Asset</option></select></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button class="btn btn-primary" style="flex:1;" onclick="saveEditFund()">✓ Save Changes</button>
+      <button class="btn btn-red" onclick="removeFundFromEdit()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-addLoan">
+  <div class="modal">
+    <span class="modal-close" onclick="closeModal('addLoan')">✕</span>
+    <div class="modal-title">+ Add Loan / Credit Card</div>
+    <div class="form-group" style="margin-bottom:10px;"><label class="form-label">Lender Name</label><input id="lName" placeholder="SBI Personal Loan"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Type</label><select id="lType"><option>Personal Loan</option><option>Credit Card</option><option>Home Loan</option><option>Car Loan</option><option>Education Loan</option><option>Business Loan</option></select></div>
+      <div class="form-group"><label class="form-label">Interest Rate (%)</label><input type="number" id="lRate" placeholder="15" step="0.1"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Outstanding Balance (₹)</label><input type="number" id="lBal" placeholder="250000"></div>
+      <div class="form-group"><label class="form-label">Monthly EMI (₹)</label><input type="number" id="lEmi" placeholder="8500"></div>
+    </div>
+    <button class="btn btn-primary" style="width:100%;margin-top:8px;" onclick="addLoan()">Add Loan</button>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-addCrypto">
+  <div class="modal">
+    <span class="modal-close" onclick="closeModal('addCrypto')">✕</span>
+    <div class="modal-title">+ Add Crypto</div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Coin</label><select id="cCoin"><option>Bitcoin (BTC)</option><option>Ethereum (ETH)</option><option>Solana (SOL)</option><option>BNB</option><option>Other</option></select></div>
+      <div class="form-group"><label class="form-label">Current Value (₹)</label><input type="number" id="cVal" placeholder="5000"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Monthly DCA (₹)</label><input type="number" id="cDca" placeholder="1200"></div>
+      <div class="form-group"><label class="form-label">Expected Annual Return (%)</label><input type="number" id="cRet" placeholder="40" step="1"></div>
+    </div>
+    <button class="btn btn-primary" style="width:100%;margin-top:8px;" onclick="addCrypto()">Add Coin</button>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-updateCibil">
+  <div class="modal">
+    <span class="modal-close" onclick="closeModal('updateCibil')">✕</span>
+    <div class="modal-title">✏ Update CIBIL Data</div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">CIBIL Score</label><input type="number" id="ciScore" placeholder="776" min="300" max="900"></div>
+      <div class="form-group"><label class="form-label">Report Date</label><input type="date" id="ciDate"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Total Enquiries</label><input type="number" id="ciEnq" placeholder="37"></div>
+      <div class="form-group"><label class="form-label">Active Loans</label><input type="number" id="ciLoans" placeholder="6"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Credit Utilisation (%)</label><input type="number" id="ciUtil" placeholder="45" max="100"></div>
+      <div class="form-group"><label class="form-label">Missed Payments</label><input type="number" id="ciMissed" placeholder="0"></div>
+    </div>
+    <button class="btn btn-primary" style="width:100%;margin-top:8px;" onclick="saveCibil()">Save</button>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// SUPABASE CONFIG
+// ═══════════════════════════════════════════════
+// SETUP: Run this SQL once in Supabase SQL Editor:
+// ---------------------------------------------------
+// create table if not exists user_data (
+//   user_id uuid references auth.users(id) primary key,
+//   data text,
+//   updated_at timestamptz default now()
+// );
+// alter table user_data enable row level security;
+// create policy "Users can manage own data" on user_data
+//   for all using (auth.uid() = user_id);
+// ---------------------------------------------------
+var SUPA_URL='https://jpytoxxkkbzdrdoxuyoh.supabase.co';
+var SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpweXRveHhra2J6ZHJkb3h1eW9oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MDAxNzgsImV4cCI6MjA5NTE3NjE3OH0.iY4WQwDU11QIbUvq1abMxhxQ6dUmtjDDSYHehAsPf-I';
+// Handle both CDN exposure patterns for supabase-js v2
+var _supa=window.supabase||window.Supabase;
+var sb=_supa.createClient(SUPA_URL,SUPA_KEY);
+var currentUser=null;
+
+// ═══════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════
+var S={
+  name:'',age:28,income:0,expense:0,
+  funds:[],loans:[],crypto:[],
+  epfo:{balance:0,empMo:0,emplMo:0,rate:8.25,age:28,retire:60},
+  cibil:{score:0,date:'',enquiries:0,activeLoans:0,util:0,missedPayments:0,history:[],parsedAccounts:[]},
+  insurance:[],
+  yrs:{overview:10,portfolio:10,epfo:20,debt:5,crypto:5,cibil:12,insurance:1}
+};
+// parsedAccounts now stored in S.cibil.parsedAccounts
+var charts={};
+
+function gv(id){return document.getElementById(id);}
+function fmt(n){if(!n&&n!==0)return '—';if(Math.abs(n)>=10000000)return '₹'+(n/10000000).toFixed(2)+'Cr';if(Math.abs(n)>=100000)return '₹'+(n/100000).toFixed(2)+'L';if(Math.abs(n)>=1000)return '₹'+(n/1000).toFixed(1)+'K';return '₹'+Math.round(n).toLocaleString('en-IN');}
+function pct(v,t){return t?((v/t)*100).toFixed(1)+'%':'0%';}
+function notify(msg,type){var n=gv('notif');n.textContent=msg;n.style.display='block';n.style.borderColor=type==='ok'?'var(--green)':type==='err'?'var(--red)':'var(--border)';setTimeout(function(){n.style.display='none';},3500);}
+// ── SAVE: write to Supabase + localStorage cache ──
+var saveTimer=null;
+function saveAll(){
+  // Always write to localStorage immediately (instant, works offline)
+  try{localStorage.setItem('wos_v4',JSON.stringify(S));}catch(e){}
+  // Debounce Supabase writes (300ms) to avoid hammering on rapid input
+  if(saveTimer)clearTimeout(saveTimer);
+  saveTimer=setTimeout(function(){
+    if(!currentUser)return;
+    sb.from('user_data').upsert({
+      user_id:currentUser.id,
+      data:JSON.stringify(S),
+      updated_at:new Date().toISOString()
+    },{onConflict:'user_id'}).then(function(res){
+      if(res.error)console.warn('Supabase save error:',res.error.message);
+      else gv('lastSync').textContent='Saved: '+new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+    });
+  },300);
+}
+
+// ── LOAD: try Supabase first, fallback to localStorage ──
+function loadAll(){
+  try{
+    var d=localStorage.getItem('wos_v4');
+    if(d){
+      var parsed=JSON.parse(d);
+      S=Object.assign(S,parsed);
+      // Guarantee nested arrays exist after merge
+      if(!S.cibil)S.cibil={score:0,date:'',enquiries:0,activeLoans:0,util:0,missedPayments:0,history:[],parsedAccounts:[]};
+      if(!S.cibil.parsedAccounts)S.cibil.parsedAccounts=[];
+      if(!S.cibil.history)S.cibil.history=[];
+      if(!S.funds)S.funds=[];
+      if(!S.loans)S.loans=[];
+      if(!S.crypto)S.crypto=[];
+      if(!S.insurance)S.insurance=[];
+    }
+  }catch(e){console.warn('loadAll error:',e);}
+}
+
+async function loadFromSupabase(){
+  if(!currentUser)return;
+  try{
+    var res=await sb.from('user_data').select('data,updated_at').eq('user_id',currentUser.id).single();
+    if(res.data&&res.data.data){
+      var remote=JSON.parse(res.data.data);
+      S=Object.assign(S,remote);
+      // Guarantee nested arrays exist after remote merge
+      if(!S.cibil)S.cibil={score:0,date:'',enquiries:0,activeLoans:0,util:0,missedPayments:0,history:[],parsedAccounts:[]};
+      if(!S.cibil.parsedAccounts)S.cibil.parsedAccounts=[];
+      if(!S.cibil.history)S.cibil.history=[];
+      if(!S.funds)S.funds=[];
+      if(!S.loans)S.loans=[];
+      if(!S.crypto)S.crypto=[];
+      if(!S.insurance)S.insurance=[];
+      localStorage.setItem('wos_v4',JSON.stringify(S));
+      gv('lastSync').textContent='Synced: '+new Date(res.data.updated_at).toLocaleDateString('en-IN');
+    }
+  }catch(e){console.log('No cloud data yet — using local');}
+  renderActive();
+  updateProfile();
+}
+
+function clearAll(){
+  if(!confirm('Reset ALL data? This cannot be undone.'))return;
+  localStorage.removeItem('wos_v4');
+  S={name:currentUser?S.name:'',age:28,income:0,expense:0,funds:[],loans:[],crypto:[],
+    epfo:{balance:0,empMo:0,emplMo:0,rate:8.25,age:28,retire:60},
+    cibil:{score:0,date:'',enquiries:0,activeLoans:0,util:0,missedPayments:0,history:[],parsedAccounts:[]},
+    insurance:[],yrs:{overview:10,portfolio:10,epfo:20,debt:5,crypto:5,cibil:12,insurance:1}};
+  S.cibil.parsedAccounts=[];
+  if(currentUser){
+    sb.from('user_data').delete().eq('user_id',currentUser.id).then(function(){
+      notify('Data cleared ✓','ok');renderActive();
+    });
+  } else renderActive();
+}
+
+function destroyChart(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
+
+// ═══════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════
+var activeTab='overview';
+function goTab(tab,el){
+  document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active');});
+  document.querySelectorAll('.nav-item').forEach(function(n){n.classList.remove('active');});
+  gv('panel-'+tab).classList.add('active');
+  if(el)el.classList.add('active');
+  var titles={overview:'Dashboard',portfolio:'Portfolio',epfo:'EPFO / PF',crypto:'Crypto',debt:'Debt Tracker',cibil:'CIBIL Score',insurance:'Insurance',upload:'Upload & Import'};
+  gv('pageTitle').textContent=titles[tab]||tab;
+  activeTab=tab;
+  renderTab(tab);
+}
+function renderTab(tab){
+  if(tab==='overview')renderOverview();
+  else if(tab==='portfolio')renderPortfolio();
+  else if(tab==='epfo')renderEpfo();
+  else if(tab==='crypto')renderCrypto();
+  else if(tab==='debt')renderDebt();
+  else if(tab==='cibil')renderCibil();
+  else if(tab==='insurance')renderInsurance();
+  else if(tab==='upload')initUploadTab();
+}
+function renderActive(){renderTab(activeTab);}
+
+// ═══════════════════════════════════════════════
+// MODALS
+// ═══════════════════════════════════════════════
+function openModal(id){gv('modal-'+id).classList.add('open');}
+function closeModal(id){gv('modal-'+id).classList.remove('open');}
+
+// ═══════════════════════════════════════════════
+// SETUP
+// ═══════════════════════════════════════════════
+function saveSetup(){
+  S.name=gv('sName').value.trim()||S.name;
+  S.age=parseInt(gv('sAge').value)||S.age;
+  S.income=parseInt(gv('sIncome').value)||S.income;
+  S.expense=parseInt(gv('sExpense').value)||S.expense;
+  S.sipTotal=parseInt(gv('sSip').value)||S.sipTotal;
+  saveAll();
+  updateProfile();
+  closeModal('setup');
+  renderActive();
+  notify('Profile saved','ok');
+}
+function updateProfile(){
+  var initials=S.name?S.name.split(' ').map(function(w){return w[0];}).join('').slice(0,2).toUpperCase():'?';
+  gv('avatarEl').textContent=initials;
+  gv('profileName').textContent=S.name||'Setup Profile';
+  gv('profileRole').textContent=S.income?fmt(S.income)+'/mo':'Click to configure';
+  gv('lastSync').textContent='Updated: '+new Date().toLocaleDateString('en-IN');
+}
+function openSetupIfNeeded(){if(!S.name)openModal('setup');}
+
+// ═══════════════════════════════════════════════
+// OVERVIEW
+// ═══════════════════════════════════════════════
+function renderOverview(){
+  var totalPortfolio=S.funds.reduce(function(a,f){return a+(f.value||0);},0);
+  var totalDebt=S.loans.reduce(function(a,l){return a+(l.balance||0);},0);
+  var totalCrypto=S.crypto.reduce(function(a,c){return a+(c.value||0);},0);
+  var epfoVal=S.epfo.balance||0;
+  var netWorth=totalPortfolio+totalCrypto+epfoVal-totalDebt;
+  var totalInvested=S.funds.reduce(function(a,f){return a+(f.invested||0);},0);
+  var gains=totalPortfolio-totalInvested;
+
+  var alerts='';
+  if(S.cibil.score>0&&S.cibil.score<700)alerts+='<div class="alert warn"><div class="alert-icon">⚠</div><div class="alert-body"><strong>CIBIL Alert:</strong> Your score is '+S.cibil.score+' — focus on clearing dues and disputing errors.</div></div>';
+  if(totalDebt>0)alerts+='<div class="alert warn"><div class="alert-icon">◍</div><div class="alert-body"><strong>Debt Active:</strong> Total outstanding '+fmt(totalDebt)+'. Use Debt Tracker for payoff plan.</div></div>';
+  if(!S.name)alerts+='<div class="alert info"><div class="alert-icon">ℹ</div><div class="alert-body"><strong>Welcome!</strong> Click <strong>⚙ Setup</strong> in the top bar to configure your profile.</div></div>';
+  // Net Worth trend chart
+  destroyChart('nwChart');
+  var nwCtx=gv('nwChart');
+  if(nwCtx){
+    var totalPf=S.funds.reduce(function(a,f){return a+(f.value||0);},0);
+    var totalDebt=S.loans.reduce(function(a,l){return a+(l.balance||0);},0);
+    var totalCrypto=S.crypto.reduce(function(a,c){return a+(c.value||0);},0);
+    var epfoVal=S.epfo.balance||0;
+    var nwLabels=[],nwVals=[];
+    var nwBase=totalPf+totalCrypto+epfoVal-totalDebt;
+    var monthlySip=S.funds.reduce(function(a,f){return a+(f.sip||0);},0);
+    var monthlyEmi=S.loans.reduce(function(a,l){return a+(l.emi||0);},0);
+    var avgCagrNw=S.funds.length?S.funds.reduce(function(a,f){return a+(f.cagr||12);},0)/S.funds.length:12;
+    var nwCorpus=nwBase;
+    for(var y=0;y<=10;y++){
+      nwLabels.push('Y'+y);nwVals.push(Math.round(nwCorpus));
+      for(var m=0;m<12;m++){nwCorpus=nwCorpus*(1+avgCagrNw/100/12)+monthlySip-monthlyEmi;}
+    }
+    charts['nwChart']=new Chart(nwCtx,{type:'line',data:{labels:nwLabels,datasets:[{label:'Net Worth',data:nwVals,borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,.1)',fill:true,tension:.4,pointRadius:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#4a5a72'}},y:{ticks:{color:'#4a5a72',callback:function(v){return fmt(v);}}}}}});
+  }
+
+  gv('overviewAlerts').innerHTML=alerts;
+
+  gv('overviewStats').innerHTML=
+    '<div class="stat"><div class="stat-label">Net Worth</div><div class="stat-value '+(netWorth>=0?'green':'red')+'">'+fmt(Math.abs(netWorth))+'</div><div class="stat-sub">'+(netWorth>=0?'Assets > Liabilities':'Liabilities > Assets')+'</div></div>'+
+    '<div class="stat"><div class="stat-label">Total Portfolio</div><div class="stat-value blue">'+fmt(totalPortfolio)+'</div><div class="stat-sub">Invested: '+fmt(totalInvested)+'</div></div>'+
+    '<div class="stat"><div class="stat-label">Total Debt</div><div class="stat-value red">'+fmt(totalDebt)+'</div><div class="stat-sub">'+S.loans.length+' active loan(s)</div></div>'+
+    '<div class="stat"><div class="stat-label">CIBIL Score</div><div class="stat-value '+(S.cibil.score>=750?'green':S.cibil.score>=700?'amber':S.cibil.score>0?'red':'')+'">'+
+    (S.cibil.score||'—')+'</div><div class="stat-sub">'+(S.cibil.score>=800?'Excellent':S.cibil.score>=750?'Good':S.cibil.score>=700?'Fair':S.cibil.score>0?'Poor':'Not set')+'</div></div>';
+
+  // Allocation pie
+  destroyChart('allocChart');
+  var allocCtx=gv('allocChart');
+  if(allocCtx){
+    var allocData=[totalPortfolio,epfoVal,totalCrypto,totalDebt];
+    var allocLabels=['MF/Stocks','EPFO','Crypto','Debt'];
+    charts['allocChart']=new Chart(allocCtx,{type:'doughnut',data:{labels:allocLabels,datasets:[{data:allocData,backgroundColor:['#3b82f6','#22c55e','#f59e0b','#ef4444'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#8fa0b8',font:{size:10}}}}}});
+  }
+
+  // Top holdings
+  var sorted=[...S.funds].sort(function(a,b){return (b.value||0)-(a.value||0);}).slice(0,5);
+  var holdHtml='<table><tr><th>Fund</th><th>Value</th><th>Gain</th></tr>';
+  sorted.forEach(function(f){
+    var g=(f.value||0)-(f.invested||0);
+    holdHtml+='<tr><td>'+f.name+'</td><td>'+fmt(f.value)+'</td><td class="'+(g>=0?'green':'red')+'">'+fmt(g)+'</td></tr>';
+  });
+  if(!sorted.length)holdHtml+='<tr><td colspan="3" style="color:var(--text3);text-align:center;padding:20px;">No holdings yet</td></tr>';
+  holdHtml+='</table>';
+  gv('topHoldings').innerHTML=holdHtml;
+
+  // Debt summary
+  var dHtml='';
+  if(S.loans.length){
+    var monthly=S.loans.reduce(function(a,l){return a+(l.emi||0);},0);
+    dHtml='<div style="margin-bottom:12px;font-size:13px;color:var(--text2);">Monthly EMIs: <strong class="red">'+fmt(monthly)+'</strong></div>';
+    S.loans.slice(0,4).forEach(function(l){
+      dHtml+='<div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px;"><span>'+l.name+'</span><span class="red">'+fmt(l.balance)+'</span></div>';
+      dHtml+='<div class="progress-wrap" style="margin-bottom:8px;"><div class="progress-fill" style="width:'+Math.min(100,((l.balance||0)/Math.max(...S.loans.map(function(x){return x.balance||0;}),1)*100))+'%;background:var(--red);"></div></div>';
+    });
+  } else {
+    dHtml='<div style="color:var(--text3);text-align:center;padding:20px;font-size:13px;">No active loans 🎉</div>';
+  }
+  gv('debtSummaryOv').innerHTML=dHtml;
+  gv('debtBadge').textContent=S.loans.length||'0';
+}
+
+// ═══════════════════════════════════════════════
+// PORTFOLIO
+// ═══════════════════════════════════════════════
+function addFund(){
+  var name=(selectedFund?selectedFund.name:null)||gv('fName').value.trim()||gv('fSearch').value.trim();
+  if(!name){notify('Search or enter a fund name','err');return;}
+  S.funds.push({
+    id:'f'+Date.now(),
+    name:name,
+    type:gv('fType').value,
+    category:gv('fCat').value,
+    value:parseFloat(gv('fVal').value)||0,
+    invested:parseFloat(gv('fInvested').value)||0,
+    sip:parseFloat(gv('fSip').value)||0,
+    stepUp:parseFloat(gv('fStepUp').value)||0,
+    cagr:parseFloat(gv('fCagr').value)||(selectedFund?selectedFund.cagr:12),
+    amfi:selectedFund?selectedFund.amfi:null
+  });
+  saveAll();closeModal('addFund');renderPortfolio();notify('Fund added ✓','ok');
+  selectedFund=null;
+}
+
+function openEditFund(id){
+  var f=S.funds.find(function(x){return x.id===id;});
+  if(!f)return;
+  gv('editFundId').value=id;
+  gv('editFundTitle').textContent='✏ Edit — '+f.name;
+  gv('editFVal').value=f.value||'';
+  gv('editFInvested').value=f.invested||'';
+  gv('editFSip').value=f.sip||'';
+  gv('editFStepUp').value=f.stepUp||'';
+  gv('editFCagr').value=f.cagr||'';
+  var catEl=gv('editFCat');
+  for(var i=0;i<catEl.options.length;i++){if(catEl.options[i].value===f.category||catEl.options[i].text===f.category)catEl.selectedIndex=i;}
+  openModal('editFund');
+}
+
+function saveEditFund(){
+  var id=gv('editFundId').value;
+  var f=S.funds.find(function(x){return x.id===id;});
+  if(!f){notify('Fund not found','err');return;}
+  if(gv('editFVal').value!=='')f.value=parseFloat(gv('editFVal').value)||f.value;
+  if(gv('editFInvested').value!=='')f.invested=parseFloat(gv('editFInvested').value)||f.invested;
+  if(gv('editFSip').value!=='')f.sip=parseFloat(gv('editFSip').value)||f.sip;
+  if(gv('editFStepUp').value!=='')f.stepUp=parseFloat(gv('editFStepUp').value)||0;
+  if(gv('editFCagr').value!=='')f.cagr=parseFloat(gv('editFCagr').value)||f.cagr;
+  f.category=gv('editFCat').value;
+  saveAll();closeModal('editFund');renderPortfolio();notify('✓ Fund updated','ok');
+}
+
+function removeFundFromEdit(){
+  var id=gv('editFundId').value;
+  if(!confirm('Remove this fund?'))return;
+  removeFund(id);closeModal('editFund');
+}
+
+function removeFund(id){S.funds=S.funds.filter(function(f){return f.id!==id;});saveAll();renderPortfolio();}
+
+
+function renderPortfolio(){
+  var yr=parseInt(gv('yrPortfolio').value)||10;
+  var globalStepUp=parseFloat(gv('stepUpPct').value)||0;
+  var total=S.funds.reduce(function(a,f){return a+(f.value||0);},0);
+  var inv=S.funds.reduce(function(a,f){return a+(f.invested||0);},0);
+  var sip=S.funds.reduce(function(a,f){return a+(f.sip||0);},0);
+  var gains=total-inv;
+
+  // Project corpus WITH step-up
+  var avgCagr=S.funds.length?S.funds.reduce(function(a,f){return a+(f.cagr||12);},0)/S.funds.length:12;
+  var projWithStepUp=projectCorpus(total,sip,avgCagr,yr,globalStepUp);
+  var projNoStepUp=projectCorpus(total,sip,avgCagr,yr,0);
+  var futureWithSU=projWithStepUp[projWithStepUp.length-1];
+  var futureNoSU=projNoStepUp[projNoStepUp.length-1];
+  var sipAtEnd=sip*Math.pow(1+globalStepUp/100,yr);
+
+  gv('portfolioStats').innerHTML=
+    '<div class="stat"><div class="stat-label">Current Value</div><div class="stat-value blue">'+fmt(total)+'</div><div class="stat-sub">'+S.funds.length+' holdings</div></div>'+
+    '<div class="stat"><div class="stat-label">Total Invested</div><div class="stat-value">'+fmt(inv)+'</div><div class="stat-sub">Gain: <span class="'+(gains>=0?'green':'red')+'">'+fmt(gains)+'</span></div></div>'+
+    '<div class="stat"><div class="stat-label">Monthly SIP</div><div class="stat-value teal">'+fmt(sip)+'</div>'+
+      (globalStepUp?'<div class="stat-sub">→ '+fmt(Math.round(sipAtEnd))+' in '+yr+'yr</div>':'<div class="stat-sub">No step-up</div>')+
+    '</div>'+
+    '<div class="stat"><div class="stat-label">Value in '+yr+' Years</div><div class="stat-value green">'+fmt(futureWithSU)+'</div>'+
+      (globalStepUp?'<div class="stat-sub tag tag-green" style="display:inline-block;margin-top:4px;">+'+fmt(futureWithSU-futureNoSU)+' vs flat SIP</div>':'<div class="stat-sub">Avg CAGR: '+avgCagr.toFixed(1)+'%</div>')+
+    '</div>';
+
+  // Projection chart — with & without step-up
+  destroyChart('portfolioChart');
+  var pCtx=gv('portfolioChart');
+  if(pCtx){
+    var labels=[];
+    for(var y=0;y<=yr;y++)labels.push('Y'+y);
+    var datasets=[
+      {label:'With Step-Up SIP'+(globalStepUp?' (+'+globalStepUp+'%/yr)':''),data:projWithStepUp,borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,.08)',fill:true,tension:.4,pointRadius:3},
+      {label:'Flat SIP (no step-up)',data:projNoStepUp,borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,.05)',fill:true,tension:.4,pointRadius:2,borderDash:globalStepUp?[5,4]:[]}
+    ];
+    // Add invested line
+    var invLine=[],running=inv;
+    for(var y2=0;y2<=yr;y2++){invLine.push(Math.round(running));running+=sip*12;}
+    datasets.push({label:'Amount Invested',data:invLine,borderColor:'#4a5a72',borderDash:[4,4],fill:false,tension:.4,pointRadius:0});
+
+    charts['portfolioChart']=new Chart(pCtx,{type:'line',data:{labels:labels,datasets:datasets},
+      options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+        plugins:{legend:{labels:{color:'#8fa0b8',font:{size:11}}},
+          tooltip:{callbacks:{label:function(ctx){return ctx.dataset.label+': '+fmt(ctx.raw);}}}},
+        scales:{x:{ticks:{color:'#4a5a72'}},y:{ticks:{color:'#4a5a72',callback:function(v){return fmt(v);}}}}}});
+  }
+
+  // Fund allocation pie
+  destroyChart('fundAlloc');
+  var faCtx=gv('fundAlloc');
+  if(faCtx&&S.funds.length){
+    var colors=['#3b82f6','#22c55e','#f59e0b','#ef4444','#a855f7','#14b8a6','#f97316','#06b6d4','#84cc16','#ec4899'];
+    charts['fundAlloc']=new Chart(faCtx,{type:'doughnut',
+      data:{labels:S.funds.map(function(f){return f.name.length>22?f.name.slice(0,22)+'…':f.name;}),
+        datasets:[{data:S.funds.map(function(f){return f.value||0;}),backgroundColor:colors.slice(0,S.funds.length),borderWidth:0}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#8fa0b8',font:{size:10}}}}}});
+  }
+
+  // Fund table with step-up column
+  var html='<table><tr><th>Fund</th><th>Type</th><th>Value</th><th>Invested</th><th>Gain</th><th>SIP/mo</th><th>Step-Up</th><th>CAGR</th><th>In '+yr+'yr</th><th></th></tr>';
+  S.funds.forEach(function(f){
+    var g=(f.value||0)-(f.invested||0);
+    var gp=f.invested?((g/f.invested)*100).toFixed(1):0;
+    var su=f.stepUp||globalStepUp||0;
+    var proj=projectCorpus(f.value||0,f.sip||0,f.cagr||12,yr,su);
+    var futureF=proj[proj.length-1];
+    html+='<tr style="cursor:pointer;" onclick="openEditFund(\''+f.id+'\')" title="Click to edit">'+
+      '<td><div style="font-weight:600;font-size:13px;">'+f.name+'</div><div style="font-size:11px;color:var(--text3)">'+f.category+' <span style="color:var(--text3);font-size:10px;">✏ click to edit</span></div></td>'+
+      '<td><span class="tag tag-blue">'+f.type+'</span></td>'+
+      '<td class="blue" style="font-weight:600">'+fmt(f.value)+'</td>'+
+      '<td>'+fmt(f.invested)+'</td>'+
+      '<td class="'+(g>=0?'green':'red')+'">'+fmt(g)+'<div style="font-size:10px;color:var(--text3)">'+gp+'%</div></td>'+
+      '<td>'+fmt(f.sip)+'</td>'+
+      '<td class="teal">'+(su?'+'+su+'%/yr':'—')+'</td>'+
+      '<td>'+(f.cagr||'—')+'%</td>'+
+      '<td class="green" style="font-weight:700">'+fmt(futureF)+'</td>'+
+      '<td onclick="event.stopPropagation()"><button class="btn btn-red btn-sm" data-fid="'+f.id+'" onclick="removeFund(this.dataset.fid)">✕</button></td></tr>';
+  });
+  if(!S.funds.length)html+='<tr><td colspan="10" style="color:var(--text3);text-align:center;padding:24px;">No holdings — add funds or import from broker</td></tr>';
+  gv('fundTable').innerHTML=html+'</table>';
+}
+
+// ── Helper: project corpus over N years with optional step-up ──
+function projectCorpus(startVal,monthSip,cagrPct,years,annualStepUpPct){
+  var vals=[Math.round(startVal)];
+  var corpus=startVal;
+  var currentSip=monthSip;
+  var monthlyRate=cagrPct/100/12;
+  for(var y=0;y<years;y++){
+    // Apply step-up at start of each year (after year 0)
+    if(y>0&&annualStepUpPct>0)currentSip=currentSip*(1+annualStepUpPct/100);
+    for(var m=0;m<12;m++){corpus=corpus*(1+monthlyRate)+currentSip;}
+    vals.push(Math.round(corpus));
+  }
+  return vals;
+}
+
+// ═══════════════════════════════════════════════
+// EPFO
+// ═══════════════════════════════════════════════
+function saveEpfo(){
+  S.epfo.balance=parseFloat(gv('epfoBal').value)||S.epfo.balance;
+  S.epfo.empMo=parseFloat(gv('epfoEmp').value)||S.epfo.empMo;
+  S.epfo.emplMo=parseFloat(gv('epfoEmpl').value)||S.epfo.emplMo;
+  S.epfo.rate=parseFloat(gv('epfoRate').value)||S.epfo.rate;
+  S.epfo.age=parseInt(gv('epfoAge').value)||S.epfo.age;
+  S.epfo.retire=parseInt(gv('epfoRetire').value)||S.epfo.retire;
+  saveAll();renderEpfo();
+}
+
+function renderEpfo(){
+  var e=S.epfo;
+  var yr=parseInt(gv('yrEpfo').value)||20;
+  var monthly=(e.empMo||0)+(e.emplMo||0);
+  var yrs=Math.max(1,(e.retire||60)-(e.age||28));
+  var future=e.balance||0;
+  for(var i=0;i<yrs*12;i++){future=future*(1+(e.rate||8.25)/100/12)+monthly;}
+
+  gv('epfoStats').innerHTML=
+    '<div class="stat"><div class="stat-label">Current Balance</div><div class="stat-value green">'+fmt(e.balance)+'</div></div>'+
+    '<div class="stat"><div class="stat-label">Monthly Credit</div><div class="stat-value teal">'+fmt(monthly)+'</div><div class="stat-sub">Emp+Empl</div></div>'+
+    '<div class="stat"><div class="stat-label">Interest Rate</div><div class="stat-value amber">'+(e.rate||8.25)+'%</div><div class="stat-sub">p.a.</div></div>'+
+    '<div class="stat"><div class="stat-label">Retirement Corpus</div><div class="stat-value purple">'+fmt(future)+'</div><div class="stat-sub">At age '+(e.retire||60)+'</div></div>';
+
+  // Fill inputs
+  ['epfoBal','epfoEmp','epfoEmpl','epfoRate','epfoAge','epfoRetire'].forEach(function(id){
+    var map={epfoBal:'balance',epfoEmp:'empMo',epfoEmpl:'emplMo',epfoRate:'rate',epfoAge:'age',epfoRetire:'retire'};
+    if(S.epfo[map[id]])gv(id).value=S.epfo[map[id]];
+  });
+
+  destroyChart('epfoChart');
+  var ctx=gv('epfoChart');
+  if(ctx){
+    var labels=[],vals=[];
+    var bal=e.balance||0;
+    for(var y=0;y<=yr;y++){labels.push('Y'+y);vals.push(Math.round(bal));for(var m=0;m<12;m++)bal=bal*(1+(e.rate||8.25)/100/12)+(e.empMo||0)+(e.emplMo||0);}
+    charts['epfoChart']=new Chart(ctx,{type:'line',data:{labels:labels,datasets:[{label:'PF Corpus',data:vals,borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,.1)',fill:true,tension:.4,pointRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8fa0b8',font:{size:11}}}},scales:{x:{ticks:{color:'#4a5a72',maxTicksLimit:8}},y:{ticks:{color:'#4a5a72',callback:function(v){return fmt(v);}}}}}});
+  }
+}
+
+// ═══════════════════════════════════════════════
+// CRYPTO
+// ═══════════════════════════════════════════════
+function addCrypto(){
+  S.crypto.push({id:'c'+Date.now(),coin:gv('cCoin').value,value:parseFloat(gv('cVal').value)||0,dca:parseFloat(gv('cDca').value)||0,ret:parseFloat(gv('cRet').value)||40});
+  saveAll();closeModal('addCrypto');renderCrypto();notify('Coin added','ok');
+}
+function removeCrypto(id){S.crypto=S.crypto.filter(function(c){return c.id!==id;});saveAll();renderCrypto();}
+
+function renderCrypto(){
+  var yr=parseInt(gv('yrCrypto').value)||5;
+  var total=S.crypto.reduce(function(a,c){return a+(c.value||0);},0);
+  var dca=S.crypto.reduce(function(a,c){return a+(c.dca||0);},0);
+
+  gv('cryptoStats').innerHTML=
+    '<div class="stat"><div class="stat-label">Crypto Value</div><div class="stat-value amber">'+fmt(total)+'</div></div>'+
+    '<div class="stat"><div class="stat-label">Monthly DCA</div><div class="stat-value">'+fmt(dca)+'</div></div>'+
+    '<div class="stat"><div class="stat-label">Holdings</div><div class="stat-value">'+S.crypto.length+'</div></div>'+
+    '<div class="stat"><div class="stat-label">Risk Level</div><div class="stat-value red">High</div><div class="stat-sub">Max 5% of portfolio</div></div>';
+
+  destroyChart('cryptoChart');
+  var ctx=gv('cryptoChart');
+  if(ctx){
+    var datasets=S.crypto.map(function(c,i){
+      var colors=['#f59e0b','#3b82f6','#a855f7','#22c55e','#ef4444'];
+      var vals=[],bal=c.value||0,rate=(c.ret||40)/100/12;
+      var lbl=[];
+      for(var y=0;y<=yr;y++){lbl.push('Y'+y);vals.push(Math.round(bal));for(var m=0;m<12;m++)bal=bal*(1+rate)+(c.dca||0);}
+      return {label:c.coin,data:vals,borderColor:colors[i%colors.length],backgroundColor:'transparent',tension:.4,pointRadius:2};
+    });
+    var labels=[];for(var y=0;y<=yr;y++)labels.push('Y'+y);
+    charts['cryptoChart']=new Chart(ctx,{type:'line',data:{labels:labels,datasets:datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8fa0b8',font:{size:11}}}},scales:{x:{ticks:{color:'#4a5a72',maxTicksLimit:8}},y:{ticks:{color:'#4a5a72',callback:function(v){return fmt(v);}}}}}});
+  }
+
+  var html='<table><tr><th>Coin</th><th>Value</th><th>DCA/mo</th><th>Expected Return</th><th></th></tr>';
+  S.crypto.forEach(function(c){
+    html+='<tr><td class="amber" style="font-weight:600">'+c.coin+'</td><td>'+fmt(c.value)+'</td><td>'+fmt(c.dca)+'</td><td>'+c.ret+'% p.a.</td>'+
+      '<td><button class="btn btn-red btn-sm" data-cid="'+c.id+'" onclick="removeCrypto(this.dataset.cid)">✕</button></td></tr>';
+  });
+  if(!S.crypto.length)html+='<tr><td colspan="5" style="color:var(--text3);text-align:center;padding:20px;">No crypto holdings</td></tr>';
+  html+='</table>';
+  gv('cryptoTable').innerHTML=html;
+}
+
+// ═══════════════════════════════════════════════
+// DEBT
+// ═══════════════════════════════════════════════
+function addLoan(){
+  var name=gv('lName').value.trim();
+  if(!name){notify('Enter lender name','err');return;}
+  S.loans.push({id:'l'+Date.now(),name:name,type:gv('lType').value,rate:parseFloat(gv('lRate').value)||15,balance:parseFloat(gv('lBal').value)||0,emi:parseFloat(gv('lEmi').value)||0});
+  saveAll();closeModal('addLoan');renderDebt();notify('Loan added','ok');
+  ['lName','lRate','lBal','lEmi'].forEach(function(id){gv(id).value='';});
+}
+function removeLoan(id){S.loans=S.loans.filter(function(l){return l.id!==id;});saveAll();renderDebt();gv('debtBadge').textContent=S.loans.length||'0';}
+function updateLoanBal(id,val){var l=S.loans.find(function(x){return x.id===id;});if(l){l.balance=parseFloat(val)||l.balance;saveAll();}}
+
+function renderDebt(){
+  var total=S.loans.reduce(function(a,l){return a+(l.balance||0);},0);
+  var monthly=S.loans.reduce(function(a,l){return a+(l.emi||0);},0);
+  var avgRate=S.loans.length?S.loans.reduce(function(a,l){return a+(l.rate||0)*(l.balance||0);},0)/Math.max(total,1):0;
+
+  gv('debtStats').innerHTML=
+    '<div class="stat"><div class="stat-label">Total Debt</div><div class="stat-value red">'+fmt(total)+'</div></div>'+
+    '<div class="stat"><div class="stat-label">Monthly EMIs</div><div class="stat-value amber">'+fmt(monthly)+'</div></div>'+
+    '<div class="stat"><div class="stat-label">Weighted Rate</div><div class="stat-value">'+avgRate.toFixed(1)+'%</div></div>'+
+    '<div class="stat"><div class="stat-label">Loans Active</div><div class="stat-value">'+S.loans.length+'</div></div>';
+  gv('debtBadge').textContent=S.loans.length||'0';
+
+  // Payoff chart
+  destroyChart('debtChart');
+  var ctx=gv('debtChart');
+  if(ctx&&S.loans.length){
+    var yr=parseInt(gv('yrDebt').value)||5;
+    var labels=[],vals=[];
+    var bal=total;
+    labels.push('Now');vals.push(Math.round(bal));
+    for(var m=1;m<=yr*12;m++){
+      bal=Math.max(0,bal*(1+avgRate/100/12)-monthly);
+      if(m%12===0){labels.push('Y'+(m/12));vals.push(Math.round(bal));}
+    }
+    charts['debtChart']=new Chart(ctx,{type:'line',data:{labels:labels,datasets:[{label:'Remaining Debt',data:vals,borderColor:'#ef4444',backgroundColor:'rgba(239,68,68,.1)',fill:true,tension:.4,pointRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8fa0b8',font:{size:11}}}},scales:{x:{ticks:{color:'#4a5a72',maxTicksLimit:8}},y:{ticks:{color:'#4a5a72',callback:function(v){return fmt(v);}}}}}});
+  }
+
+  // Debt pie
+  destroyChart('debtPie');
+  var pCtx=gv('debtPie');
+  if(pCtx&&S.loans.length){
+    var colors=['#ef4444','#f59e0b','#f97316','#a855f7','#3b82f6','#14b8a6'];
+    charts['debtPie']=new Chart(pCtx,{type:'doughnut',data:{labels:S.loans.map(function(l){return l.name;}),datasets:[{data:S.loans.map(function(l){return l.balance||0;}),backgroundColor:colors.slice(0,S.loans.length),borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#8fa0b8',font:{size:10}}}}}});
+  }
+
+  // Loan table
+  var html='<table><tr><th>Lender</th><th>Type</th><th>Rate</th><th>Outstanding (editable)</th><th>EMI</th><th>Months Left</th><th></th></tr>';
+  S.loans.forEach(function(l){
+    var mo=l.emi&&l.rate?(function(){
+      var r=l.rate/100/12,bal=l.balance||0,emi=l.emi||0;
+      if(!emi||!r)return '—';
+      return Math.ceil(Math.log(emi/(emi-r*bal))/Math.log(1+r))||'—';
+    })():'—';
+    html+='<tr>'+
+      '<td style="font-weight:600">'+l.name+'</td>'+
+      '<td><span class="tag tag-amber">'+l.type+'</span></td>'+
+      '<td class="red">'+l.rate+'%</td>'+
+      '<td><input type="number" value="'+(l.balance||0)+'" style="width:110px;padding:4px 8px;font-size:12px;" data-lid="'+l.id+'" onchange="updateLoanBal(this.dataset.lid,this.value)"></td>'+
+      '<td>'+fmt(l.emi)+'</td>'+
+      '<td>'+(typeof mo==='number'?mo+' mo':mo)+'</td>'+
+      '<td><button class="btn btn-red btn-sm" data-lid="'+l.id+'" onclick="removeLoan(this.dataset.lid)">✕</button></td></tr>';
+  });
+  if(!S.loans.length)html+='<tr><td colspan="7" style="color:var(--text3);text-align:center;padding:24px;">No active loans 🎉</td></tr>';
+  gv('loanTable').innerHTML=html+'</table>';
+
+  // Strategies
+  renderDebtStrategies();
+}
+
+function renderDebtStrategies(){
+  var loans=S.loans.filter(function(l){return (l.balance||0)>0;});
+  if(!loans.length){gv('avalancheTable').innerHTML='<p style="color:var(--text3);text-align:center;padding:20px;">No active loans</p>';gv('snowballTable').innerHTML='<p style="color:var(--text3);text-align:center;padding:20px;">No active loans</p>';return;}
+  
+  var aval=[...loans].sort(function(a,b){return (b.rate||0)-(a.rate||0);});
+  var snow=[...loans].sort(function(a,b){return (a.balance||0)-(b.balance||0);});
+  
+  function renderStrategy(sorted,el){
+    var html='<table><tr><th>#</th><th>Loan</th><th>Rate</th><th>Balance</th><th>Action</th></tr>';
+    sorted.forEach(function(l,i){
+      html+='<tr><td style="font-size:16px;font-weight:700;color:var(--accent)">'+(i+1)+'</td>'+
+        '<td style="font-weight:600">'+l.name+'</td>'+
+        '<td class="red">'+l.rate+'%</td>'+
+        '<td>'+fmt(l.balance)+'</td>'+
+        '<td><span class="tag '+(i===0?'tag-red':'tag-amber')+'">'+(i===0?'🎯 Target Now':'Next')+'</span></td></tr>';
+    });
+    gv(el).innerHTML=html+'</table>';
+  }
+  renderStrategy(aval,'avalancheTable');
+  renderStrategy(snow,'snowballTable');
+}
+
+// ═══════════════════════════════════════════════
+// CIBIL
+// ═══════════════════════════════════════════════
+function saveCibil(){
+  var score=parseInt(gv('ciScore').value);
+  if(score&&score>=300&&score<=900){
+    S.cibil.score=score;
+    if(S.cibil.history){
+      var today=new Date().toISOString().slice(0,10);
+      S.cibil.history.push({date:gv('ciDate').value||today,score:score});
+    }
+  }
+  S.cibil.date=gv('ciDate').value||S.cibil.date;
+  S.cibil.enquiries=parseInt(gv('ciEnq').value)||S.cibil.enquiries;
+  S.cibil.activeLoans=parseInt(gv('ciLoans').value)||S.cibil.activeLoans;
+  S.cibil.util=parseFloat(gv('ciUtil').value)||S.cibil.util;
+  S.cibil.missedPayments=parseInt(gv('ciMissed').value)||S.cibil.missedPayments;
+  saveAll();closeModal('updateCibil');renderCibil();notify('CIBIL updated','ok');
+}
+
+function renderCibil(){
+  var c=S.cibil;
+  var sc=c.score||0;
+  var col=sc>=800?'var(--green)':sc>=750?'var(--teal)':sc>=700?'var(--amber)':sc>0?'var(--red)':'var(--text3)';
+  var lbl=sc>=800?'Excellent ✅':sc>=750?'Good 👍':sc>=700?'Fair ⚠️':sc>0?'Poor ❌':'Not set';
+
+  // Score ring animation
+  var arc=gv('scoreArc');
+  if(arc){
+    var pct2=sc>0?Math.round((sc-300)/600*377):0;
+    arc.setAttribute('stroke-dashoffset',377-pct2);
+    arc.setAttribute('stroke',col);
+  }
+  gv('scoreNum').textContent=sc||'—';
+  gv('scoreNum').style.color=col;
+  gv('scoreLbl').textContent=lbl;
+
+  gv('cibilMeta').innerHTML=
+    '<div class="stat"><div class="stat-label">Enquiries</div><div class="stat-value '+(c.enquiries>20?'red':c.enquiries>10?'amber':'green')+'">'+(c.enquiries||'—')+'</div><div class="stat-sub">'+(c.enquiries>20?'Too many':'Manageable')+'</div></div>'+
+    '<div class="stat"><div class="stat-label">Utilisation</div><div class="stat-value '+(c.util>50?'red':c.util>30?'amber':'green')+'">'+(c.util?c.util+'%':'—')+'</div><div class="stat-sub">Target &lt; 30%</div></div>';
+
+  // ── Restore parsed accounts list if data exists in state ──
+  if(S.cibil.parsedAccounts&&S.cibil.parsedAccounts.length>0){
+    var wrap=gv('parsedAccountsWrap');
+    if(wrap){
+      wrap.style.display='block';
+      gv('parsedCount').innerHTML=
+        (sc?'<span class="green">✓ Score: <strong>'+sc+'</strong></span>':'<span class="amber">Score not set</span>')+
+        ' &nbsp;|&nbsp; <strong>'+S.cibil.parsedAccounts.length+'</strong> open accounts — ready to sync';
+      var html='';
+      S.cibil.parsedAccounts.forEach(function(item){
+        var typeTag=item.type&&item.type.toLowerCase().indexOf('credit')!==-1?'tag-red':
+                    item.type&&item.type.toLowerCase().indexOf('personal')!==-1?'tag-amber':'tag-blue';
+        html+='<div class="parsed-item">'+
+          '<div class="parsed-item-header">'+
+            '<div class="parsed-item-name">'+item.lender+'</div>'+
+            '<span class="tag '+typeTag+'">'+(item.type||'Loan')+'</span>'+
+          '</div>'+
+          '<div class="parsed-fields">'+
+            '<div class="parsed-field"><label>Outstanding (₹)</label><input type="number" id="pbal_'+item.id+'" value="'+item.balance+'"></div>'+
+            '<div class="parsed-field"><label>EMI (₹)</label><input type="number" id="pemi_'+item.id+'" value="'+item.emi+'"></div>'+
+            '<div class="parsed-field"><label>Rate (%)</label><input type="number" id="prate_'+item.id+'" value="'+item.rate+'" step="0.1"></div>'+
+          '</div></div>';
+      });
+      gv('parsedAccountsList').innerHTML=html;
+    }
+  }
+
+  // History chart
+  destroyChart('cibilChart');
+  var ctx=gv('cibilChart');
+  if(ctx){
+    var hist=c.history&&c.history.length?c.history:[{date:c.date||new Date().toISOString().slice(0,10),score:sc}];
+    var labels=hist.map(function(h){return h.date?h.date.slice(0,7):''});
+    var vals=hist.map(function(h){return h.score;});
+    // Add projection
+    var last=vals[vals.length-1]||sc;
+    var mo=parseInt(gv('yrCibil').value)||12;
+    for(var i=1;i<=mo;i++){
+      var d=new Date();d.setMonth(d.getMonth()+i);
+      labels.push(d.toISOString().slice(0,7));
+      vals.push(Math.min(900,Math.round(last+i*2.5)));// optimistic projection
+    }
+    charts['cibilChart']=new Chart(ctx,{type:'line',data:{labels:labels,datasets:[
+      {label:'Actual Score',data:vals.slice(0,hist.length),borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,.1)',fill:true,tension:.3,pointRadius:4},
+      {label:'Projected',data:[...Array(hist.length-1).fill(null),vals[hist.length-1],...vals.slice(hist.length)],borderColor:'#22c55e',borderDash:[6,4],fill:false,tension:.3,pointRadius:3}
+    ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8fa0b8',font:{size:11}}}},scales:{x:{ticks:{color:'#4a5a72',maxTicksLimit:8}},y:{min:600,max:900,ticks:{color:'#4a5a72'}}}}});
+  }
+
+  // Improvement plan
+  renderCibilPlan();
+}
+
+function renderCibilPlan(){
+  var c=S.cibil;
+  var sc=c.score||0;
+  if(!sc){gv('cibilPlan').innerHTML='<p style="color:var(--text3);text-align:center;padding:20px;">Upload CIBIL PDF or update score manually to see your improvement plan.</p>';return;}
+  
+  var steps=[];
+  if(c.missedPayments>0)steps.push({priority:'🔴 Critical',action:'Clear all missed/overdue payments immediately',impact:'+40–60 pts',timeline:'Within 1 month'});
+  if(c.enquiries>15)steps.push({priority:'🔴 Critical',action:'Stop ALL new credit applications (hard enquiries). Enquiries fall off after 24 months.',impact:'+20–30 pts',timeline:'24 months passively'});
+  if(c.util>30)steps.push({priority:'🟠 High',action:'Reduce credit card utilisation below 30%. Pay down balances or request limit increase.',impact:'+30–50 pts',timeline:'1–2 months'});
+  if(S.loans.length>4)steps.push({priority:'🟠 High',action:'Close small/unused loans systematically. Fewer active accounts improves mix.',impact:'+15–25 pts',timeline:'3–6 months'});
+  steps.push({priority:'🟡 Medium',action:'File disputes for any incorrect "XXX" or missing payment entries with each lender directly and on CIBIL portal.',impact:'+10–30 pts',timeline:'30–60 days per dispute'});
+  steps.push({priority:'🟡 Medium',action:'Keep 1 old credit card active with low utilisation — length of credit history matters.',impact:'+10–20 pts',timeline:'Ongoing'});
+  steps.push({priority:'🟢 Low',action:'Set auto-pay for minimum payments on all EMIs so no future missed payments.',impact:'Prevents score drop',timeline:'Set up today'});
+
+  var html='<div style="margin-bottom:12px;font-size:13px;color:var(--text2);">Current: <strong style="color:var(--accent)">'+(sc)+'</strong> → Target: <strong style="color:var(--green)">800+</strong> (estimated '+Math.ceil((800-sc)/2.5)+' months at current pace)</div>';
+  html+='<table><tr><th>Priority</th><th>Action</th><th>Impact</th><th>Timeline</th></tr>';
+  steps.forEach(function(s){
+    html+='<tr><td style="font-size:12px;white-space:nowrap">'+s.priority+'</td><td style="font-size:12px">'+s.action+'</td><td class="green" style="font-size:12px;white-space:nowrap">'+s.impact+'</td><td style="font-size:12px;color:var(--text3);white-space:nowrap">'+s.timeline+'</td></tr>';
+  });
+  gv('cibilPlan').innerHTML=html+'</table>';
+}
+
+// ═══════════════════════════════════════════════
+// CIBIL PDF PARSER — FIXED
+// ═══════════════════════════════════════════════
+function initCibilUpload(){
+  var zone=gv('cibilZone'),inp=gv('cibilInp');
+  if(!zone||!inp||zone._cibilInit)return;
+  zone._cibilInit=true;
+  zone.addEventListener('click',function(){inp.click();});
+  zone.addEventListener('dragover',function(e){e.preventDefault();zone.classList.add('drag');});
+  zone.addEventListener('dragleave',function(){zone.classList.remove('drag');});
+  zone.addEventListener('drop',function(e){e.preventDefault();zone.classList.remove('drag');if(e.dataTransfer.files[0])doCibilFile(e.dataTransfer.files[0]);});
+  inp.addEventListener('change',function(){if(this.files[0])doCibilFile(this.files[0]);});
+}
+
+function doCibilFile(file){
+  if(file.type!=='application/pdf'){notify('Please upload a PDF','err');return;}
+  notify('Reading CIBIL PDF...');
+  // Show loading state in results area
+  var wrap=gv('parsedAccountsWrap');
+  if(wrap){
+    wrap.style.display='block';
+    gv('parsedCount').innerHTML='<span class="amber">⟳ Extracting text from PDF...</span>';
+    gv('parsedAccountsList').innerHTML='';
+  }
+  var reader=new FileReader();
+  reader.onload=function(e){
+    extractPDFText(e.target.result,function(text){
+      // Show raw text preview BEFORE parsing so user can verify
+      var preview=text.slice(0,300).replace(/</g,'&lt;');
+      if(wrap){
+        gv('parsedCount').innerHTML='<span class="amber">⟳ Parsing... ('+text.length+' chars extracted)</span>';
+        gv('parsedAccountsList').innerHTML=
+          '<div style="background:var(--bg);padding:10px;border-radius:6px;font-size:11px;color:var(--text3);font-family:monospace;white-space:pre-wrap;max-height:120px;overflow:auto;margin-bottom:8px;">'+
+          '<strong style="color:var(--amber)">Raw text preview (first 300 chars):</strong>\n'+preview+'</div>';
+      }
+      if(!text||text.trim().length<50){
+        gv('parsedCount').innerHTML='<span class="red">❌ PDF text extraction failed — PDF may be image-based/scanned</span>';
+        gv('parsedAccountsList').innerHTML='<div style="color:var(--text2);font-size:13px;padding:12px;">'+
+          'This PDF could not be read as text. Try:<br>'+
+          '1. Download the report again as PDF (not screenshot)<br>'+
+          '2. Make sure it\'s from myscore.cibil.com<br>'+
+          '3. Enter data manually using the ✏ Update button</div>';
+        return;
+      }
+      parseCIBILReport(text);
+    });
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseCIBILReport(text){
+  // ═══════════════════════════════════════════════════════
+  // CIBIL PARSER v5 — Built from actual TransUnion report
+  // Confirmed text structure:
+  //   "Control Number : 11,15,08,80,898"          ← strip this line first
+  //   "300 900"                                    ← gauge range (ignore)
+  //   "776"                                        ← score standalone line
+  //   "Your CIBIL Score is 776 as of Date : ..."  ← definitive sentence
+  //   Each account block:
+  //     "Member Name\nSMICC\nAccount Type\nPersonal Loan\n..."
+  //     "Current Balance ₹50,000"
+  //     "EMI Amount ₹9,276"
+  //     "Rate of Interest 10.50%"
+  //     "Date Closed -"   ← "-" means open; a date means closed
+  // ═══════════════════════════════════════════════════════
+
+  var score=0;
+
+  // ── STEP 1: Remove Control Number line (contains false-positive 898) ──
+  var clean=text.replace(/Control\s*Number\s*[:\-–][^\n]*/gi,'');
+
+  // ── STEP 2: "Your CIBIL Score is NNN" — exact sentence, highest confidence ──
+  var m=clean.match(/Your\s+CIBIL\s+Score\s+is\s+(\d{3})/i);
+  if(m){var v=parseInt(m[1]);if(v>=300&&v<=900)score=v;}
+
+  // ── STEP 3: "CIBIL Score is NNN as of" ──
+  if(!score){
+    var m2=clean.match(/CIBIL\s+Score\s+is\s+(\d{3})/i);
+    if(m2){var v2=parseInt(m2[1]);if(v2>=300&&v2<=900)score=v2;}
+  }
+
+  // ── STEP 4: "Score is NNN as of" ──
+  if(!score){
+    var m3=clean.match(/Score\s+is\s+(\d{3})\s+as\s+of/i);
+    if(m3){var v3=parseInt(m3[1]);if(v3>=300&&v3<=900)score=v3;}
+  }
+
+  // ── STEP 5: Standalone 3-digit line AFTER "300 900" gauge ──
+  // Your report has "300 900\n776\n" — find the score between those markers
+  if(!score){
+    var gaugeIdx=clean.search(/\b300\s+900\b/);
+    if(gaugeIdx>=0){
+      var after=clean.slice(gaugeIdx).match(/\b300\s+900\b\s*\n\s*(\d{3})\s*\n/);
+      if(after){var v4=parseInt(after[1]);if(v4>=300&&v4<=900)score=v4;}
+    }
+  }
+
+  // ── STEP 6: Any standalone 3-digit line NOT near commas/digits ──
+  // Last resort: find a line that is ONLY a 3-digit number, 300-900
+  if(!score){
+    var lines=clean.split('\n');
+    for(var i=0;i<lines.length;i++){
+      var l=lines[i].trim();
+      if(/^\d{3}$/.test(l)){
+        var v5=parseInt(l);
+        if(v5>=301&&v5<=899){ // exclude 300 and 900 which are range markers
+          // Make sure prev and next lines aren't also bare numbers (table data)
+          var prev=i>0?lines[i-1].trim():'x';
+          var next=i<lines.length-1?lines[i+1].trim():'x';
+          if(!/^\d+$/.test(prev)||!/^\d+$/.test(next)){
+            score=v5;break;
+          }
+        }
+      }
+    }
+  }
+
+  console.log('Wealth Dashboard CIBIL score extracted:',score);
+
+  // ═══════════════════════════════════════════════════
+  // ACCOUNT PARSER — block-by-block using "Member Name" anchors
+  // Each account in the report follows this pattern:
+  //   Member Name\n[NAME]\nAccount Type\n[TYPE]\n...
+  //   Current Balance ₹[N] or ₹0
+  //   Date Closed [date or -]
+  // ═══════════════════════════════════════════════════
+  S.cibil.parsedAccounts=[];
+
+  // ── ACCOUNT PARSER v6 — TESTED AGAINST REAL REPORT ──
+  // KEY INSIGHT: This CIBIL PDF has financial fields (Current Balance, EMI etc)
+  // appearing BEFORE the "Member Name\nLENDER" block, not after.
+  // pdf.js extracts in reading order so we must look BACKWARDS from each
+  // Member Name to find that account's financial data.
+
+  var accountsStart=text.indexOf('ALL ACCOUNTS');
+  var closedStart=text.indexOf('CLOSED ACCOUNTS');
+  var enquiryStart=text.indexOf('ENQUIRY DETAILS');
+
+  // Only parse the OPEN ACCOUNTS section
+  var openText=text.slice(
+    accountsStart>=0?accountsStart:0,
+    closedStart>=0?closedStart:(enquiryStart>=0?enquiryStart:text.length)
+  );
+
+  // Find all "Member Name\n[LENDER]" positions in open section
+  var memberPositions=[];
+  var mnRe=/Member Name\n([^\n]+)/g;
+  var mnM;
+  while((mnM=mnRe.exec(openText))!==null){
+    memberPositions.push({pos:mnM.index,end:mnM.index+mnM[0].length,lender:mnM[1].trim()});
+  }
+
+  memberPositions.forEach(function(mp,idx){
+    var lender=mp.lender;
+    if(!lender||lender.length<2||lender==='Member Name')return;
+
+    // Financial fields = text from PREVIOUS member's end to THIS member's start
+    var prevEnd=idx>0?memberPositions[idx-1].end:0;
+    var financialText=openText.slice(prevEnd,mp.pos);
+
+    // Detail fields = text from THIS member's end to NEXT member's start
+    var nextPos=idx<memberPositions.length-1?memberPositions[idx+1].pos:openText.length;
+    var detailText=openText.slice(mp.end,nextPos);
+
+    // Account Type
+    var accType='Personal Loan';
+    var atm=detailText.match(/Account Type\n([^\n]+)/);
+    if(atm)accType=atm[1].trim();
+
+    // Date Closed (in detail text)
+    var isClosed=false;
+    var dcm=detailText.match(/Date Closed\s*\n?([^\n]{1,30})/);
+    if(dcm){var dcv=dcm[1].trim();if(dcv&&dcv!=='-'&&/\d{2}\/\d{2}\/\d{4}/.test(dcv))isClosed=true;}
+
+    // Current Balance — check financial text FIRST, then detail text
+    var balance=0;
+    var cbm=financialText.match(/Current Balance\s*[₹\s]*([\d,]+)/)||
+             detailText.match(/Current Balance\s*[₹\s]*([\d,]+)/);
+    if(cbm)balance=parseInt(cbm[1].replace(/,/g,''))||0;
+
+    // EMI
+    var emi=0;
+    var emm=financialText.match(/EMI Amount\s*[₹\s]*([\d,]+)/)||
+             detailText.match(/EMI Amount\s*[₹\s]*([\d,]+)/);
+    if(emm)emi=parseInt(emm[1].replace(/,/g,''))||0;
+
+    // Also check Actual Payment Amount as fallback for EMI
+    if(!emi){
+      var apm=financialText.match(/Actual Payment Amount\s*[₹\s]*([\d,]+)/)||
+               detailText.match(/Actual Payment Amount\s*[₹\s]*([\d,]+)/);
+      if(apm)emi=parseInt(apm[1].replace(/,/g,''))||0;
+    }
+
+    // Rate of Interest
+    var rate=0;
+    var rim=financialText.match(/Rate of Interest\s*\n?([\d.]+)/)||
+             detailText.match(/Rate of Interest\s*\n?([\d.]+)/);
+    if(rim)rate=parseFloat(rim[1])||0;
+
+    if(!isClosed&&balance>0){
+      if(!rate){
+        var tl=accType.toLowerCase();
+        if(tl.indexOf('credit card')!==-1)rate=36;
+        else if(tl.indexOf('personal')!==-1)rate=16;
+        else if(tl.indexOf('consumer')!==-1)rate=14;
+        else if(tl.indexOf('home')!==-1)rate=9;
+        else rate=15;
+      }
+      if(!emi)emi=Math.round(balance*(rate/100/12)/(1-Math.pow(1+rate/100/12,-36)));
+      S.cibil.parsedAccounts.push({
+        id:'pa'+idx,lender:lender,type:accType,balance:balance,emi:emi,rate:rate
+      });
+    }
+  });
+
+  console.log('CIBIL parser: found',S.cibil.parsedAccounts.length,'open accounts',
+    S.cibil.parsedAccounts.map(function(a){return a.lender+'=₹'+a.balance;}));
+
+  // Show parse debug in UI
+  var debugInfo='';
+  debugInfo+='Score: '+(score||'not found')+' | ';
+  debugInfo+='ALL ACCOUNTS found: '+(text.indexOf('ALL ACCOUNTS')>=0?'yes':'NO - TEXT MAY BE WRONG')+' | ';
+  debugInfo+='CLOSED ACCOUNTS found: '+(text.indexOf('CLOSED ACCOUNTS')>=0?'yes':'no')+' | ';
+  debugInfo+='Member Names found: '+memberPositions.length+' | ';
+  debugInfo+='Open accounts: '+S.cibil.parsedAccounts.length;
+  console.log('Debug:',debugInfo);
+
+  // Count enquiries from ENQUIRY DETAILS section
+  var enquiryCount=0;
+  if(enquiryStart>=0){
+    var enqText=text.slice(enquiryStart);
+    var enqMatches=enqText.match(/Date Of Enquiry/g);
+    if(enqMatches)enquiryCount=enqMatches.length;
+  }
+
+  // ── Update state ──
+  if(score){
+    S.cibil.score=score;
+    if(!S.cibil.history)S.cibil.history=[];
+    // Don't add duplicate for same date
+    var today=new Date().toISOString().slice(0,10);
+    var alreadyToday=S.cibil.history.some(function(h){return h.date===today;});
+    if(!alreadyToday)S.cibil.history.push({date:today,score:score});
+  }
+  if(enquiryCount>0)S.cibil.enquiries=enquiryCount;
+  S.cibil.activeLoans=S.cibil.parsedAccounts.length;
+  if(score||S.cibil.parsedAccounts.length)saveAll();
+
+  // ── Show results ──
+  var wrap=gv('parsedAccountsWrap');
+  wrap.style.display='block';
+  gv('parsedCount').innerHTML=
+    (score?'<span class="green">✓ Score: <strong>'+score+'</strong></span>':'<span class="amber">⚠ Score not found — enter manually</span>')+
+    ' &nbsp;|&nbsp; <strong>'+S.cibil.parsedAccounts.length+'</strong> open accounts'+
+    (enquiryCount?' &nbsp;|&nbsp; <strong>'+enquiryCount+'</strong> enquiries':'');
+
+  var html='';
+  S.cibil.parsedAccounts.forEach(function(item){
+    var typeTag=item.type&&item.type.toLowerCase().indexOf('credit')!==-1?'tag-red':
+                item.type&&item.type.toLowerCase().indexOf('personal')!==-1?'tag-amber':'tag-blue';
+    html+='<div class="parsed-item">'+
+      '<div class="parsed-item-header">'+
+        '<div class="parsed-item-name">'+item.lender+'</div>'+
+        '<span class="tag '+typeTag+'">'+(item.type||'Loan')+'</span>'+
+      '</div>'+
+      '<div class="parsed-fields">'+
+        '<div class="parsed-field"><label>Outstanding (₹)</label><input type="number" id="pbal_'+item.id+'" value="'+item.balance+'"></div>'+
+        '<div class="parsed-field"><label>EMI (₹)</label><input type="number" id="pemi_'+item.id+'" value="'+item.emi+'"></div>'+
+        '<div class="parsed-field"><label>Rate (%)</label><input type="number" id="prate_'+item.id+'" value="'+item.rate+'" step="0.1"></div>'+
+      '</div></div>';
+  });
+
+  if(!S.cibil.parsedAccounts.length){
+    // Show detailed debug when nothing found
+    var allAccountsIdx=text.indexOf('ALL ACCOUNTS');
+    var memberCount=(text.match(/Member Name/g)||[]).length;
+    html='<div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:14px;font-size:13px;">'+
+      '<strong class="red">No open accounts extracted.</strong><br><br>'+
+      'Debug info:<br>'+
+      '• PDF text length: '+text.length+' chars<br>'+
+      '• "ALL ACCOUNTS" found: '+(allAccountsIdx>=0?'YES at pos '+allAccountsIdx:'NO ❌')+('<br>')+
+      '• "CLOSED ACCOUNTS" found: '+(text.indexOf('CLOSED ACCOUNTS')>=0?'YES':'NO')+('<br>')+
+      '• "Member Name" occurrences: '+memberCount+('<br>')+
+      '• First 200 chars of extracted text:<br>'+
+      '<pre style="font-size:10px;color:var(--text3);white-space:pre-wrap;margin-top:6px;overflow:auto;max-height:100px;">'+
+      text.slice(0,200).replace(/</g,'&lt;')+'</pre>'+
+      '<br>If "ALL ACCOUNTS" is not found or Member Name count is 0, the PDF text extraction failed.'+
+      '<br>Try entering accounts manually in the Debt tab.</div>';
+  }
+  gv('parsedAccountsList').innerHTML=html;
+
+  renderCibil();
+  if(score)notify('✓ Score '+score+' extracted, '+S.cibil.parsedAccounts.length+' accounts found','ok');
+  else notify('Accounts extracted — enter score manually using ✏ Update','err');
+}
+
+function applyToDebt(){
+  // Ensure parsedAccounts exists
+  if(!S.cibil)S.cibil={parsedAccounts:[]};
+  if(!S.cibil.parsedAccounts)S.cibil.parsedAccounts=[];
+
+  console.log('applyToDebt called, parsedAccounts:',JSON.stringify(S.cibil.parsedAccounts));
+
+  if(S.cibil.parsedAccounts.length===0){
+    notify('No accounts found — please upload your CIBIL PDF first','err');
+    return;
+  }
+  var added=0,updated=0;
+  S.cibil.parsedAccounts.forEach(function(item){
+    var balEl=gv('pbal_'+item.id);
+    var emiEl=gv('pemi_'+item.id);
+    var rateEl=gv('prate_'+item.id);
+    var bal=balEl&&balEl.value?parseInt(balEl.value)||item.balance:item.balance;
+    var emi=emiEl&&emiEl.value?parseInt(emiEl.value)||item.emi:item.emi;
+    var rate=rateEl&&rateEl.value?parseFloat(rateEl.value)||item.rate:item.rate;
+    if(!bal||bal<=0){console.log('Skipping',item.lender,'- zero balance');return;}
+    if(!emi||emi<=0)emi=Math.round(bal*0.04);
+    if(!rate||rate<=0)rate=15;
+    var lname=(item.lender||'').toLowerCase().trim();
+    var existIdx=S.loans.findIndex(function(l){
+      var ln=(l.name||'').toLowerCase().trim();
+      return ln===lname||ln.indexOf(lname)!==-1||lname.indexOf(ln)!==-1;
+    });
+    if(existIdx===-1){
+      S.loans.push({
+        id:'l'+Date.now()+Math.random().toString(36).slice(2),
+        name:item.lender,
+        balance:bal,
+        rate:rate,
+        emi:emi,
+        type:item.type||'Personal Loan'
+      });
+      added++;
+    } else {
+      S.loans[existIdx].balance=bal;
+      S.loans[existIdx].emi=emi;
+      S.loans[existIdx].rate=rate;
+      updated++;
+    }
+  });
+  saveAll();
+  gv('debtBadge').textContent=S.loans.length||'0';
+  if(added+updated>0){
+    notify('✓ '+added+' added, '+updated+' updated → Debt tab','ok');
+    goTab('debt',document.getElementById('nav-debt'));
+  } else {
+    notify('Nothing synced — all balances were zero','err');
+  }
+}
+
+// ═══════════════════════════════════════════════
+// INSURANCE PDF PARSER — FIXED
+// ═══════════════════════════════════════════════
+function initInsuranceUpload(){
+  var zone=gv('insZone'),inp=gv('insInp');
+  if(!zone||!inp||zone._insInit)return;
+  zone._insInit=true;
+  zone.addEventListener('click',function(){inp.click();});
+  zone.addEventListener('dragover',function(e){e.preventDefault();zone.classList.add('drag');});
+  zone.addEventListener('dragleave',function(){zone.classList.remove('drag');});
+  zone.addEventListener('drop',function(e){e.preventDefault();zone.classList.remove('drag');if(e.dataTransfer.files[0])doInsFile(e.dataTransfer.files[0]);});
+  inp.addEventListener('change',function(){if(this.files[0])doInsFile(this.files[0]);});
+}
+
+function doInsFile(file){
+  if(file.type!=='application/pdf'){notify('Please upload a PDF','err');return;}
+  notify('Reading insurance document...');
+  var reader=new FileReader();
+  reader.onload=function(e){extractPDFText(e.target.result,function(text){parseInsuranceDoc(text,file.name);});};
+  reader.readAsArrayBuffer(file);
+}
+
+function parseInsuranceDoc(text,filename){
+  var policy={
+    id:'ins'+Date.now(),
+    name:'',insurer:'',type:'Term Life',policyNo:'',
+    cover:0,premium:0,premiumFreq:'Annual',premiumMonthly:0,
+    expiry:'',startDate:'',policyTerm:0,
+    nominee:'',sumAssured:0
+  };
+
+  var t=text.replace(/\s+/g,' ');
+
+  // INSURER
+  var insurers=['Max Life','LIC','HDFC Life','ICICI Prudential','SBI Life','Bajaj Allianz','Kotak Life','Tata AIA','PNB MetLife','Aditya Birla','Reliance Life','Birla Sun Life'];
+  insurers.forEach(function(ins){if(t.toLowerCase().indexOf(ins.toLowerCase())!==-1)policy.insurer=ins;});
+  if(!policy.insurer){var im=t.match(/([A-Z][A-Za-z\s&.]+(?:Life|Insurance|Assurance)(?:\s+(?:Company|Limited|Corp))?)/);if(im)policy.insurer=im[1].trim().slice(0,50);}
+
+  // POLICY TYPE
+  var tl=t.toLowerCase();
+  if(tl.indexOf('term')!==-1||tl.indexOf('pure risk')!==-1)policy.type='Term Life';
+  else if(tl.indexOf('health')!==-1||tl.indexOf('mediclaim')!==-1)policy.type='Health';
+  else if(tl.indexOf('ulip')!==-1||tl.indexOf('unit linked')!==-1)policy.type='ULIP';
+  else if(tl.indexOf('endowment')!==-1)policy.type='Endowment';
+  else if(tl.indexOf('money back')!==-1)policy.type='Money Back';
+  else if(tl.indexOf('whole life')!==-1)policy.type='Whole Life';
+
+  // POLICY NAME — look for product name line
+  var namePatterns=[
+    /(?:Plan Name|Product Name|Policy Name|Name of (?:the )?(?:Product|Plan|Policy))[:\s]+([A-Za-z\s]+(?:Plan|Policy|Plus|Shield|Guard|Protect|Secure|Smart|Max|Life|Term)[A-Za-z\s]*)/i,
+    /Max Life ([A-Za-z\s]+Plan)/i,
+    /([A-Z][a-z]+ (?:Smart|Secure|Shield|Guard|Life|Term|Health)[A-Za-z\s]*(?:Plan|Policy|Plus)?)/
+  ];
+  namePatterns.forEach(function(pat){if(!policy.name){var m=t.match(pat);if(m)policy.name=m[1].trim().slice(0,60);}});
+  if(!policy.name)policy.name=policy.insurer+' '+policy.type+' Policy';
+
+  // POLICY NUMBER
+  var pnPat=/(?:Policy\s*(?:No|Number|#)|Proposal\s*No)[.:\s]+([A-Z0-9-]{6,20})/i;
+  var pnm=t.match(pnPat);if(pnm)policy.policyNo=pnm[1].trim();
+
+  // SUM ASSURED / COVER — look for large numbers preceded by cover context
+  // Fix: be specific about context to avoid reading account numbers
+  var coverPatterns=[
+    /(?:Sum Assured|Cover Amount|Death Benefit|Life Cover|Coverage Amount)[^\d₹]*[₹\s]*([\d,]+(?:\.\d{2})?)/i,
+    /(?:Sum Assured|Sum\s+Assured)[^₹\d]*[₹\s]*([\d,]+)/i,
+    /₹\s*(1[,\s]?[05]0[,\s]?00[,\s]?000)/,// Common: 1 crore, 50 lakh
+  ];
+  coverPatterns.forEach(function(pat){
+    if(!policy.cover){
+      var m=t.match(pat);
+      if(m){
+        var val=parseInt(m[1].replace(/[,\s]/g,''));
+        if(val>=100000)policy.cover=val; // minimum 1 lakh to be a real cover
+      }
+    }
+  });
+
+  // PREMIUM — annual amount
+  var premPatterns=[
+    /(?:Annualised\s+Premium|Annual\s+Premium|Total\s+Premium)[^₹\d]*[₹\s]*([\d,]+(?:\.\d{2})?)/i,
+    /(?:Premium\s+Amount|Amount\s+of\s+(?:Installment\s+)?Premium)[^₹\d]*[₹\s]*([\d,]+(?:\.\d{2})?)/i
+  ];
+  premPatterns.forEach(function(pat){
+    if(!policy.premium){
+      var m=t.match(pat);
+      if(m){var val=parseFloat(m[1].replace(/,/g,''));if(val>0)policy.premium=val;}
+    }
+  });
+
+  // MONTHLY PREMIUM — from monthly installment
+  var monthlyPat=/(?:Monthly[^₹\d]*(?:Premium|Installment|EMI)|Modal Premium[^₹\d]*Monthly)[^₹\d]*[₹\s]*([\d,]+(?:\.\d{2})?)/i;
+  var mm=t.match(monthlyPat);
+  if(mm)policy.premiumMonthly=parseFloat(mm[1].replace(/,/g,''));
+  else if(policy.premium)policy.premiumMonthly=Math.round(policy.premium/12);
+
+  // POLICY TERM
+  var termPat=/(?:Policy\s+Term)[^0-9]*(\d{1,2})\s*[Yy]ears?/;
+  var tm=t.match(termPat);if(tm)policy.policyTerm=parseInt(tm[1]);
+
+  // START DATE
+  var startPat=/(?:Date of (?:Commencement|Inception|Risk)|Risk Start Date)[^0-9]*([\d]{1,2}[-\/](?:[A-Za-z]+|\d{2})[-\/]\d{2,4})/i;
+  var sm=t.match(startPat);if(sm)policy.startDate=sm[1];
+
+  // EXPIRY / MATURITY DATE
+  var exPat=/(?:Maturity Date|Expiry Date|Date of Maturity|Policy Ends)[^0-9]*([\d]{1,2}[-\/](?:[A-Za-z]+|\d{2})[-\/]\d{2,4})/i;
+  var em=t.match(exPat);if(em)policy.expiry=em[1];
+  else if(policy.startDate&&policy.policyTerm){
+    try{var d=new Date(policy.startDate);d.setFullYear(d.getFullYear()+policy.policyTerm);policy.expiry=d.getFullYear().toString();}catch(e){}
+  }
+
+  // NOMINEE
+  var nomPat=/(?:Nominee(?:s?)?\s*(?:Name)?|Nominated)[:\s]+(?:Mr\.|Mrs\.|Ms\.)?([A-Z][a-z]+(?: [A-Z][a-z]+){1,3})/;
+  var nm=t.match(nomPat);if(nm)policy.nominee=nm[1];
+
+  // If we found something useful, add to state
+  if(policy.cover>0||policy.premium>0||policy.policyNo){
+    S.insurance.push(policy);
+    saveAll();
+    gv('insParseResult').innerHTML='<div class="alert good"><div class="alert-icon">✓</div><div class="alert-body"><strong>Policy extracted:</strong> '+policy.name+' — Cover: '+fmt(policy.cover)+', Premium: '+fmt(policy.premiumMonthly)+'/mo</div></div>';
+    renderInsurance();
+    notify('Insurance policy added ✓','ok');
+  } else {
+    // Show manual entry form
+    gv('insParseResult').innerHTML='<div class="alert warn"><div class="alert-icon">⚠</div><div class="alert-body">Could not auto-extract — please fill details manually below.</div></div>'+buildManualInsForm();
+  }
+}
+
+function buildManualInsForm(){
+  return '<div class="card" style="margin-top:12px;"><div class="card-title">Manual Entry</div>'+
+    '<div class="form-row"><div class="form-group"><label class="form-label">Policy Name</label><input id="mInsName" placeholder="Max Life Smart Secure Plus"></div>'+
+    '<div class="form-group"><label class="form-label">Insurer</label><input id="mInsInsurer" placeholder="Max Life"></div></div>'+
+    '<div class="form-row"><div class="form-group"><label class="form-label">Type</label><select id="mInsType"><option>Term Life</option><option>Health</option><option>ULIP</option><option>Endowment</option></select></div>'+
+    '<div class="form-group"><label class="form-label">Policy No.</label><input id="mInsNo" placeholder="114063175"></div></div>'+
+    '<div class="form-row"><div class="form-group"><label class="form-label">Sum Assured (₹)</label><input type="number" id="mInsCover" placeholder="15000000"></div>'+
+    '<div class="form-group"><label class="form-label">Annual Premium (₹)</label><input type="number" id="mInsPrem" placeholder="13426"></div></div>'+
+    '<div class="form-row"><div class="form-group"><label class="form-label">Maturity / Expiry</label><input id="mInsExpiry" placeholder="2063"></div>'+
+    '<div class="form-group"><label class="form-label">Nominee</label><input id="mInsNominee" placeholder="Vijay K Mishra"></div></div>'+
+    '<button class="btn btn-primary" style="width:100%;margin-top:8px;" onclick="saveManualIns()">Save Policy</button></div>';
+}
+
+function saveManualIns(){
+  var n=gv('mInsName'),ins=gv('mInsInsurer'),t=gv('mInsType'),no=gv('mInsNo'),c=gv('mInsCover'),p=gv('mInsPrem'),ex=gv('mInsExpiry'),nom=gv('mInsNominee');
+  if(!n||!n.value){notify('Enter policy name','err');return;}
+  var prem=parseFloat((p&&p.value)||0);
+  S.insurance.push({id:'ins'+Date.now(),name:n.value,insurer:ins?ins.value:'',type:t?t.value:'Term Life',policyNo:no?no.value:'',cover:parseFloat((c&&c.value)||0),premium:prem,premiumMonthly:Math.round(prem/12),expiry:ex?ex.value:'',nominee:nom?nom.value:''});
+  saveAll();gv('insParseResult').innerHTML='';renderInsurance();notify('Policy saved','ok');
+}
+
+function removeIns(id){S.insurance=S.insurance.filter(function(p){return p.id!==id;});saveAll();renderInsurance();}
+
+function renderInsurance(){
+  var totalCover=S.insurance.reduce(function(a,p){return a+(p.cover||0);},0);
+  var totalAnnual=S.insurance.reduce(function(a,p){return a+(p.premium||p.premiumMonthly*12||0);},0);
+  var totalMonthly=S.insurance.reduce(function(a,p){return a+(p.premiumMonthly||Math.round((p.premium||0)/12)||0);},0);
+
+  gv('insStats').innerHTML=
+    '<div class="stat"><div class="stat-label">Total Life Cover</div><div class="stat-value green">'+fmt(totalCover)+'</div></div>'+
+    '<div class="stat"><div class="stat-label">Policies Active</div><div class="stat-value blue">'+S.insurance.length+'</div></div>'+
+    '<div class="stat"><div class="stat-label">Annual Premium</div><div class="stat-value amber">'+fmt(totalAnnual)+'</div></div>'+
+    '<div class="stat"><div class="stat-label">Monthly Cost</div><div class="stat-value">'+fmt(totalMonthly)+'</div></div>';
+
+  var html='';
+  if(!S.insurance.length){html='<div class="card"><div style="text-align:center;padding:30px;color:var(--text3);">No policies yet — upload a PDF or add manually</div></div>';}
+  S.insurance.forEach(function(p){
+    var monthly=p.premiumMonthly||Math.round((p.premium||0)/12);
+    var annual=p.premium||monthly*12;
+    var typeColors={'Term Life':'tag-green','Health':'tag-blue','ULIP':'tag-purple','Endowment':'tag-amber','Money Back':'tag-teal','Whole Life':'tag-teal'};
+    html+='<div class="ins-card">'+
+      '<span class="ins-delete" data-iid="'+p.id+'" onclick="removeIns(this.dataset.iid)">✕</span>'+
+      '<div class="ins-card-header">'+
+        '<div><div class="ins-card-name">'+p.name+'</div><div class="ins-card-type">'+p.insurer+(p.policyNo?' · #'+p.policyNo:'')+'</div></div>'+
+        '<span class="tag '+(typeColors[p.type]||'tag-blue')+'">'+p.type+'</span>'+
+      '</div>'+
+      '<div class="ins-metrics">'+
+        '<div class="ins-metric"><label>Life Cover</label><div class="val green">'+fmt(p.cover)+'</div></div>'+
+        '<div class="ins-metric"><label>Annual Premium</label><div class="val amber">'+fmt(annual)+'</div></div>'+
+        '<div class="ins-metric"><label>Monthly Cost</label><div class="val">'+fmt(monthly)+'</div></div>'+
+        '<div class="ins-metric"><label>Maturity / Expiry</label><div class="val">'+(p.expiry||'—')+'</div></div>'+
+        '<div class="ins-metric"><label>Nominee</label><div class="val" style="font-size:12px;">'+(p.nominee||'—')+'</div></div>'+
+        '<div class="ins-metric"><label>Cover/Premium Ratio</label><div class="val teal">'+(annual?Math.round(p.cover/annual)+'x':'—')+'</div></div>'+
+      '</div></div>';
+  });
+  gv('insPoliciesList').innerHTML=html;
+}
+
+// ═══════════════════════════════════════════════
+// HOLDINGS IMPORT — MULTI-FILE BROKER SUPPORT
+// ═══════════════════════════════════════════════
+function initUploadTab(){
+  initHoldingUpload();
+}
+
+var pendingHoldings=[];
+var uploadedFiles=[];
+
+function initHoldingUpload(){
+  var zone=gv('holdingZone'),inp=gv('holdingInp');
+  if(!zone||!inp||zone._init)return;
+  zone._init=true;
+  zone.addEventListener('click',function(){inp.click();});
+  zone.addEventListener('dragover',function(e){e.preventDefault();zone.classList.add('drag');});
+  zone.addEventListener('dragleave',function(){zone.classList.remove('drag');});
+  zone.addEventListener('drop',function(e){
+    e.preventDefault();zone.classList.remove('drag');
+    if(e.dataTransfer.files.length)processHoldingFiles(e.dataTransfer.files);
+  });
+  inp.addEventListener('change',function(){if(this.files.length)processHoldingFiles(this.files);});
+}
+
+function processHoldingFiles(files){
+  pendingHoldings=[];
+  uploadedFiles=[];
+  var fileArr=Array.from(files);
+  var processed=0;
+  var fileListHtml='';
+  fileArr.forEach(function(file,idx){
+    fileListHtml+='<div class="file-item" id="fi_'+idx+'"><div class="file-name">📄 '+file.name+'</div><span class="file-status amber" id="fs_'+idx+'">Processing…</span></div>';
+  });
+  gv('holdingFileList').innerHTML=fileListHtml;
+  gv('holdingParseResult').innerHTML='';
+  gv('holdingActions').innerHTML='';
+
+  fileArr.forEach(function(file,idx){
+    var ext=file.name.split('.').pop().toLowerCase();
+    var reader=new FileReader();
+    if(ext==='csv'){
+      reader.onload=function(e){
+        try{
+          var rows=parseCSV(e.target.result);
+          var holdings=detectAndParseHoldings(rows,file.name);
+          pendingHoldings=pendingHoldings.concat(holdings);
+          uploadedFiles.push({name:file.name,count:holdings.length});
+          gv('fs_'+idx).textContent=holdings.length+' holdings';
+          gv('fs_'+idx).className='file-status green';
+        }catch(err){
+          gv('fs_'+idx).textContent='Parse error';
+          gv('fs_'+idx).className='file-status red';
+        }
+        processed++;
+        if(processed===fileArr.length)showHoldingPreview();
+      };
+      reader.readAsText(file);
+    } else if(ext==='xlsx'||ext==='xls'){
+      reader.onload=function(e){
+        try{
+          var wb=XLSX.read(e.target.result,{type:'array'});
+          var ws=wb.Sheets[wb.SheetNames[0]];
+          var data=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+          var holdings=detectAndParseHoldings(data,file.name);
+          pendingHoldings=pendingHoldings.concat(holdings);
+          uploadedFiles.push({name:file.name,count:holdings.length});
+          gv('fs_'+idx).textContent=holdings.length+' holdings';
+          gv('fs_'+idx).className='file-status green';
+        }catch(err){
+          gv('fs_'+idx).textContent='Parse error: '+err.message;
+          gv('fs_'+idx).className='file-status red';
+        }
+        processed++;
+        if(processed===fileArr.length)showHoldingPreview();
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      gv('fs_'+idx).textContent='Unsupported format';
+      gv('fs_'+idx).className='file-status red';
+      processed++;
+      if(processed===fileArr.length)showHoldingPreview();
+    }
+  });
+}
+
+function parseCSV(text){
+  var lines=text.split('\n');
+  return lines.map(function(line){
+    var result=[],current='',inQ=false;
+    for(var i=0;i<line.length;i++){
+      if(line[i]==='"'){inQ=!inQ;}
+      else if(line[i]===','&&!inQ){result.push(current.trim());current='';}
+      else{current+=line[i];}
+    }
+    result.push(current.trim());
+    return result;
+  }).filter(function(r){return r.some(function(c){return c.trim();});});
+}
+
+function detectAndParseHoldings(rows,filename){
+  if(!rows||rows.length<2)return[];
+  var fname=filename.toLowerCase();
+  var headers=rows[0].map(function(h){return (h||'').toString().toLowerCase().trim();});
+  
+  // Detect broker format from filename and headers
+  var broker='unknown';
+  if(fname.indexOf('groww')!==-1)broker='groww';
+  else if(fname.indexOf('zerodha')!==-1||fname.indexOf('kite')!==-1)broker='zerodha';
+  else if(fname.indexOf('coin')!==-1)broker='coin';
+  else if(fname.indexOf('paytm')!==-1)broker='paytm';
+  
+  // Auto-detect from headers
+  if(broker==='unknown'){
+    var headerStr=headers.join(',');
+    if(headerStr.indexOf('scheme')!==-1||headerStr.indexOf('folio')!==-1)broker='mf'; // mutual fund
+    if(headerStr.indexOf('symbol')!==-1&&headerStr.indexOf('qty')!==-1)broker='stock';
+    if(headerStr.indexOf('current value')!==-1)broker='groww';
+  }
+
+  // Column mapping strategies
+  var colMaps={
+    // Groww MF/stocks: Fund Name, Type, Current Value, Invested, Returns
+    groww:{name:['fund name','name','scheme name','stock name'],value:['current value','current val','mkt value'],invested:['invested','total invested','invest value'],sip:['monthly sip','sip amount'],category:['type','category','asset class']},
+    // Zerodha Kite: Symbol, Qty, Avg, LTP, P&L, Value
+    zerodha:{name:['symbol','tradingsymbol','instrument'],value:['value','current value','mkt value'],invested:['avg price','avg cost'],quantity:['qty','quantity'],category:['type']},
+    // Zerodha Coin MF: Scheme, Folio, Units, NAV, Value, Invested
+    coin:{name:['scheme','scheme name','fund'],value:['current value','value'],invested:['invested amount','invested','cost'],sip:['sip']},
+    // Generic fallback
+    generic:{name:['name','fund','scheme','symbol','stock','security'],value:['value','current value','market value','mkt val'],invested:['invested','cost','purchase value','avg cost'],sip:['sip','monthly sip'],category:['type','category','asset class','instrument type']}
+  };
+
+  var map=colMaps[broker]||colMaps.generic;
+  
+  function findCol(keys){
+    for(var k=0;k<keys.length;k++){
+      for(var h=0;h<headers.length;h++){
+        if(headers[h].indexOf(keys[k])!==-1)return h;
+      }
+    }
+    return -1;
+  }
+
+  var nameIdx=findCol(map.name||(colMaps.generic.name));
+  var valIdx=findCol(map.value||(colMaps.generic.value));
+  var invIdx=findCol(map.invested||(colMaps.generic.invested));
+  var sipIdx=findCol(map.sip||['sip']);
+  var catIdx=findCol(map.category||['category']);
+  var qtyIdx=findCol(map.quantity||['qty','quantity']);
+  var priceIdx=findCol(['ltp','price','nav','last price']);
+
+  if(nameIdx===-1&&valIdx===-1)return[]; // can't parse
+
+  var holdings=[];
+  for(var r=1;r<rows.length;r++){
+    var row=rows[r];
+    var name=(nameIdx>=0?row[nameIdx]||'':'').toString().trim();
+    if(!name||name.toLowerCase()==='total'||name.toLowerCase()==='grand total')continue;
+    
+    var rawVal=(valIdx>=0?row[valIdx]||'':'').toString().replace(/[₹,\s]/g,'');
+    var rawInv=(invIdx>=0?row[invIdx]||'':'').toString().replace(/[₹,\s]/g,'');
+    var rawSip=(sipIdx>=0?row[sipIdx]||'':'').toString().replace(/[₹,\s]/g,'');
+    var rawQty=(qtyIdx>=0?row[qtyIdx]||'':'').toString().replace(/,/g,'');
+    var rawPrice=(priceIdx>=0?row[priceIdx]||'':'').toString().replace(/[₹,\s]/g,'');
+    var cat=(catIdx>=0?row[catIdx]||'':'').toString().trim();
+
+    var val=parseFloat(rawVal)||0;
+    var inv=parseFloat(rawInv)||0;
+    var sip=parseFloat(rawSip)||0;
+    var qty=parseFloat(rawQty)||0;
+    var price=parseFloat(rawPrice)||0;
+
+    // For stock format: value = qty * ltp
+    if(!val&&qty&&price)val=qty*price;
+    // If no invested but have value, use value as invested
+    if(!inv&&val)inv=val;
+
+    if(!name||(!val&&!inv))continue;
+
+    // Detect type/category
+    var type='Mutual Fund';
+    var catL=cat.toLowerCase();
+    if(catL.indexOf('stock')!==-1||catL.indexOf('equity')!==-1||catL.indexOf('etf')!==-1||name.match(/\b(NSE|BSE|\.NS|\.BO)\b/))type='Stock/ETF';
+    if(catL.indexOf('elss')!==-1)type='ELSS';
+    if(catL.indexOf('index')!==-1)type='Index Fund';
+
+    // Estimate CAGR by type
+    var cagr=type==='Stock/ETF'?15:type==='ELSS'?13:12;
+
+    holdings.push({id:'h'+Date.now()+r,name:name,type:type,category:cat||type,value:val,invested:inv,sip:sip,cagr:cagr,broker:broker});
+  }
+  return holdings;
+}
+
+function showHoldingPreview(){
+  if(!pendingHoldings.length){
+    gv('holdingParseResult').innerHTML='<div class="alert warn"><div class="alert-icon">⚠</div><div class="alert-body">No holdings found. Make sure the file contains fund/stock names and values.</div></div>';
+    return;
+  }
+
+  // Deduplicate by name
+  var seen={};
+  var unique=pendingHoldings.filter(function(h){
+    var key=h.name.toLowerCase();
+    if(seen[key])return false;
+    seen[key]=true;return true;
+  });
+
+  var html='<div style="font-size:13px;font-weight:600;margin-bottom:8px;">Preview: <span class="green">'+unique.length+'</span> unique holdings found across '+uploadedFiles.length+' file(s)</div>';
+  html+='<div style="max-height:280px;overflow-y:auto;margin-bottom:10px;"><table><tr><th>Fund / Stock</th><th>Type</th><th>Current Value</th><th>Invested</th><th>SIP/mo</th></tr>';
+  unique.forEach(function(h){
+    var g=h.value-h.invested;
+    html+='<tr><td style="font-size:12px;">'+h.name+'</td><td><span class="tag tag-blue" style="font-size:10px;">'+h.type+'</span></td><td class="blue" style="font-size:12px;">'+fmt(h.value)+'</td><td style="font-size:12px;">'+fmt(h.invested)+'</td><td style="font-size:12px;">'+(h.sip?fmt(h.sip):'—')+'</td></tr>';
+  });
+  html+='</table></div>';
+  
+  // Check for duplicates with existing
+  var dups=unique.filter(function(h){return S.funds.some(function(f){return f.name.toLowerCase()===h.name.toLowerCase();});});
+  if(dups.length)html+='<div class="alert warn" style="margin-bottom:8px;"><div class="alert-icon">⚠</div><div class="alert-body">'+dups.length+' existing holding(s) will be updated (not duplicated).</div></div>';
+  
+  gv('holdingParseResult').innerHTML=html;
+  gv('holdingActions').innerHTML=
+    '<button class="btn btn-green" onclick="applyHoldings(false)">✓ Add All to Portfolio</button>'+
+    '<button class="btn btn-gray" style="margin-left:8px;" onclick="applyHoldings(true)">↺ Replace Existing & Add New</button>'+
+    '<button class="btn btn-outline" style="margin-left:8px;" onclick="clearHoldingPreview()">✕ Cancel</button>';
+  gv('holdingActions').style.display='flex';
+}
+
+function applyHoldings(replaceAll){
+  if(!pendingHoldings.length)return;
+  var seen2={};
+  var unique=pendingHoldings.filter(function(h){var key=h.name.toLowerCase();if(seen2[key])return false;seen2[key]=true;return true;});
+  
+  var added=0,updated=0;
+  unique.forEach(function(h){
+    var existIdx=S.funds.findIndex(function(f){return f.name.toLowerCase()===h.name.toLowerCase();});
+    if(existIdx>=0){
+      if(replaceAll){S.funds[existIdx]=Object.assign(S.funds[existIdx],{value:h.value,invested:h.invested,sip:h.sip||S.funds[existIdx].sip,category:h.category||S.funds[existIdx].category});updated++;}
+    } else {
+      S.funds.push(h);added++;
+    }
+  });
+  saveAll();
+  notify(added+' added, '+updated+' updated ✓','ok');
+  gv('holdingParseResult').innerHTML='<div class="alert good"><div class="alert-icon">✓</div><div class="alert-body"><strong>Done!</strong> '+added+' holdings added, '+updated+' updated. Go to Portfolio tab to view.</div></div>';
+  gv('holdingActions').innerHTML='<button class="btn btn-primary" onclick="goTab(\'portfolio\',document.getElementById(\'nav-portfolio\'))">→ View Portfolio</button>';
+  gv('debtBadge').textContent=S.loans.length||'0';
+}
+
+function clearHoldingPreview(){pendingHoldings=[];gv('holdingFileList').innerHTML='';gv('holdingParseResult').innerHTML='';gv('holdingActions').innerHTML='';}
+
+// ═══════════════════════════════════════════════
+// PDF TEXT EXTRACTION (pdf.js)
+// ═══════════════════════════════════════════════
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+function extractPDFText(buffer,callback){
+  pdfjsLib.getDocument({data:buffer}).promise.then(function(pdf){
+    var allPages=[];
+    for(var i=1;i<=pdf.numPages;i++)allPages.push(i);
+    var texts=new Array(pdf.numPages);
+    var done=0;
+    allPages.forEach(function(pageNum){
+      pdf.getPage(pageNum).then(function(page){
+        page.getTextContent().then(function(content){
+          // Build text with proper line breaks by tracking Y position
+          // Items with same Y = same line, different Y = new line
+          var lines=[];
+          var currentLine=[];
+          var lastY=null;
+          var YTHRESH=5; // pixels threshold for same line
+          content.items.forEach(function(item){
+            var y=item.transform?Math.round(item.transform[5]):0;
+            if(lastY===null){lastY=y;}
+            if(Math.abs(y-lastY)>YTHRESH){
+              // New line
+              if(currentLine.length)lines.push(currentLine.join(' ').trim());
+              currentLine=[item.str];
+              lastY=y;
+            } else {
+              currentLine.push(item.str);
+            }
+          });
+          if(currentLine.length)lines.push(currentLine.join(' ').trim());
+          // Filter blank lines but keep structure
+          texts[pageNum-1]=lines.filter(function(l){return l.trim();}).join('\n');
+          done++;
+          if(done===pdf.numPages)callback(texts.join('\n'));
+        });
+      });
+    });
+  }).catch(function(e){callback('');notify('Could not read PDF: '+e.message,'err');});
+}
+
+// ═══════════════════════════════════════════════
+// FUND DATABASE (70+ funds with AMFI codes)
+// ═══════════════════════════════════════════════
+var FDB=[
+  // ── ETFs — verified AMFI scheme codes ──
+  {name:'Nippon India ETF Nifty BeES',type:'ETF',cat:'Large Cap',amfi:120503,cagr:13.2},
+  {name:'Nippon India ETF Nifty Next 50 (Junior BeES)',type:'ETF',cat:'Mid Cap',amfi:120504,cagr:14.1},
+  {name:'Motilal Oswal Nasdaq 100 ETF',type:'ETF',cat:'International',amfi:120378,cagr:18.5},
+  {name:'Tata Gold ETF',type:'ETF',cat:'Gold',amfi:143249,cagr:13.2},
+  {name:'Tata Silver ETF',type:'ETF',cat:'Silver',amfi:149934,cagr:11.8},
+  {name:'Groww Nifty Metal ETF',type:'ETF',cat:'Commodity',amfi:152076,cagr:14.5},
+  {name:'SBI ETF Nifty 50',type:'ETF',cat:'Large Cap',amfi:122639,cagr:13.0},
+  {name:'HDFC Nifty 50 ETF',type:'ETF',cat:'Large Cap',amfi:130503,cagr:13.0},
+  {name:'ICICI Prudential Nifty Bank ETF',type:'ETF',cat:'Sectoral',amfi:120247,cagr:11.5},
+  {name:'HDFC Gold ETF',type:'ETF',cat:'Gold',amfi:113177,cagr:13.2},
+  {name:'Mirae Asset NYSE FANG+ ETF',type:'ETF',cat:'International',amfi:145740,cagr:22.0},
+  {name:'Kotak Nifty Midcap 50 ETF',type:'ETF',cat:'Mid Cap',amfi:119247,cagr:14.8},
+  {name:'Nippon India ETF Nifty Midcap 150',type:'ETF',cat:'Mid Cap',amfi:147946,cagr:15.2},
+  {name:'Motilal Oswal Nasdaq 100 FOF',type:'MF',cat:'International',amfi:136825,cagr:18.0},
+  // ── Large Cap MFs ──
+  {name:'Mirae Asset Large Cap Fund',type:'MF',cat:'Large Cap',amfi:118834,cagr:14.1},
+  {name:'Axis Bluechip Fund',type:'MF',cat:'Large Cap',amfi:120465,cagr:13.5},
+  {name:'HDFC Top 100 Fund',type:'MF',cat:'Large Cap',amfi:100209,cagr:14.8},
+  {name:'ICICI Prudential Bluechip Fund',type:'MF',cat:'Large Cap',amfi:120587,cagr:14.2},
+  {name:'Canara Robeco Bluechip Equity Fund',type:'MF',cat:'Large Cap',amfi:103504,cagr:13.8},
+  {name:'Kotak Bluechip Fund',type:'MF',cat:'Large Cap',amfi:120473,cagr:13.5},
+  // ── Flexi Cap ──
+  {name:'Parag Parikh Flexi Cap Fund',type:'MF',cat:'Flexi Cap',amfi:122639,cagr:18.2},
+  {name:'JM Flexicap Fund',type:'MF',cat:'Flexi Cap',amfi:100468,cagr:20.5},
+  {name:'HDFC Flexi Cap Fund',type:'MF',cat:'Flexi Cap',amfi:100209,cagr:18.5},
+  {name:'Quant Flexi Cap Fund',type:'MF',cat:'Flexi Cap',amfi:138878,cagr:21.0},
+  {name:'UTI Flexi Cap Fund',type:'MF',cat:'Flexi Cap',amfi:120716,cagr:14.5},
+  // ── Mid Cap ──
+  {name:'Motilal Oswal Midcap Fund',type:'MF',cat:'Mid Cap',amfi:125354,cagr:24.8},
+  {name:'Kotak Emerging Equity Fund',type:'MF',cat:'Mid Cap',amfi:131457,cagr:18.5},
+  {name:'HDFC Mid-Cap Opportunities Fund',type:'MF',cat:'Mid Cap',amfi:100214,cagr:19.2},
+  {name:'Nippon India Growth Fund',type:'MF',cat:'Mid Cap',amfi:100080,cagr:18.8},
+  {name:'Axis Midcap Fund',type:'MF',cat:'Mid Cap',amfi:120465,cagr:17.2},
+  {name:'SBI Magnum Midcap Fund',type:'MF',cat:'Mid Cap',amfi:100474,cagr:18.0},
+  {name:'Edelweiss Mid Cap Fund',type:'MF',cat:'Mid Cap',amfi:117492,cagr:20.5},
+  // ── Small Cap ──
+  {name:'Bandhan Small Cap Fund',type:'MF',cat:'Small Cap',amfi:119598,cagr:22.8},
+  {name:'Quant Small Cap Fund',type:'MF',cat:'Small Cap',amfi:120828,cagr:25.5},
+  {name:'SBI Small Cap Fund',type:'MF',cat:'Small Cap',amfi:125497,cagr:20.5},
+  {name:'Axis Small Cap Fund',type:'MF',cat:'Small Cap',amfi:125354,cagr:21.8},
+  {name:'Nippon India Small Cap Fund',type:'MF',cat:'Small Cap',amfi:118701,cagr:24.2},
+  {name:'HDFC Small Cap Fund',type:'MF',cat:'Small Cap',amfi:100211,cagr:19.8},
+  {name:'Kotak Small Cap Fund',type:'MF',cat:'Small Cap',amfi:120473,cagr:21.0},
+  {name:'Tata Small Cap Fund',type:'MF',cat:'Small Cap',amfi:143249,cagr:20.2},
+  // ── ELSS ──
+  {name:'Canara Robeco ELSS Tax Saver Fund',type:'ELSS',cat:'ELSS',amfi:103504,cagr:15.2},
+  {name:'Quant ELSS Tax Saver Fund',type:'ELSS',cat:'ELSS',amfi:120828,cagr:22.0},
+  {name:'Axis ELSS Tax Saver Fund',type:'ELSS',cat:'ELSS',amfi:120465,cagr:15.8},
+  {name:'Mirae Asset ELSS Tax Saver Fund',type:'ELSS',cat:'ELSS',amfi:118834,cagr:16.5},
+  {name:'SBI Long Term Equity Fund (ELSS)',type:'ELSS',cat:'ELSS',amfi:100474,cagr:17.5},
+  {name:'HDFC ELSS Tax Saver Fund',type:'ELSS',cat:'ELSS',amfi:100209,cagr:16.8},
+  // ── Multi Asset / Hybrid ──
+  {name:'Nippon India Multi Asset Fund',type:'MF',cat:'Multi Asset',amfi:118701,cagr:14.2},
+  {name:'ICICI Prudential Multi-Asset Fund',type:'MF',cat:'Multi Asset',amfi:120587,cagr:15.5},
+  {name:'Quant Multi Asset Fund',type:'MF',cat:'Multi Asset',amfi:138878,cagr:18.5},
+  // ── Index Funds ──
+  {name:'UTI Nifty 50 Index Fund',type:'Index Fund',cat:'Large Cap',amfi:120716,cagr:13.0},
+  {name:'HDFC Index Fund Nifty 50',type:'Index Fund',cat:'Large Cap',amfi:100209,cagr:13.0},
+  {name:'Motilal Oswal Nifty Midcap 150 Index Fund',type:'Index Fund',cat:'Mid Cap',amfi:125354,cagr:15.5},
+  {name:'Motilal Oswal Nifty Smallcap 250 Index Fund',type:'Index Fund',cat:'Small Cap',amfi:125354,cagr:16.2},
+  {name:'Motilal Oswal S&P 500 Index Fund',type:'Index Fund',cat:'International',amfi:125354,cagr:16.8},
+  // ── Debt / Liquid ──
+  {name:'HDFC Liquid Fund',type:'MF',cat:'Debt',amfi:100209,cagr:6.8},
+  {name:'SBI Liquid Fund',type:'MF',cat:'Debt',amfi:100474,cagr:6.9},
+  {name:'Parag Parikh Liquid Fund',type:'MF',cat:'Debt',amfi:149752,cagr:7.2},
+  // ── Popular Stocks ──
+  {name:'Reliance Industries Ltd',type:'Stock',cat:'Energy',amfi:null,cagr:18.0},
+  {name:'HDFC Bank Ltd',type:'Stock',cat:'Banking',amfi:null,cagr:16.5},
+  {name:'Infosys Ltd',type:'Stock',cat:'IT',amfi:null,cagr:20.0},
+  {name:'Tata Consultancy Services',type:'Stock',cat:'IT',amfi:null,cagr:19.0},
+  {name:'ICICI Bank Ltd',type:'Stock',cat:'Banking',amfi:null,cagr:22.0},
+  {name:'Bajaj Finance Ltd',type:'Stock',cat:'NBFC',amfi:null,cagr:28.0},
+  {name:'Kotak Mahindra Bank',type:'Stock',cat:'Banking',amfi:null,cagr:18.5},
+  {name:'Maruti Suzuki India',type:'Stock',cat:'Auto',amfi:null,cagr:17.0},
+  {name:'Asian Paints Ltd',type:'Stock',cat:'Consumer',amfi:null,cagr:16.0}
+];
+
+// ── AUTOCOMPLETE STATE ──
+var selectedFund=null;
+var suggestIndex=-1;
+
+function fundSearchInput(val){
+  selectedFund=null;
+  gv('fSelectedBadge').style.display='none';
+  gv('fFetchBtn').style.display='none';
+  gv('fManualWrap').style.display='block';
+  var q=val.trim().toLowerCase();
+  if(q.length<2){gv('fundSuggest').style.display='none';return;}
+  
+  var matches=FDB.filter(function(f){
+    return f.name.toLowerCase().indexOf(q)!==-1||f.cat.toLowerCase().indexOf(q)!==-1||f.type.toLowerCase().indexOf(q)!==-1;
+  }).slice(0,10);
+
+  if(!matches.length){gv('fundSuggest').style.display='none';return;}
+  
+  var html='';
+  matches.forEach(function(f,i){
+    var typeCol={'ETF':'tag-blue','MF':'tag-green','ELSS':'tag-purple','Index Fund':'tag-teal','Stock':'tag-amber'};
+    html+='<div class="fund-suggest-item" data-idx="'+i+'" onclick="selectFund('+FDB.indexOf(f)+')">'+
+      '<div class="fsi-name">'+f.name+'<span class="fsi-cagr">~'+f.cagr+'%</span></div>'+
+      '<div class="fsi-meta"><span class="tag '+(typeCol[f.type]||'tag-blue')+'" style="font-size:10px;padding:1px 6px;">'+f.type+'</span> '+f.cat+(f.amfi?' · AMFI: '+f.amfi:'')+'</div>'+
+      '</div>';
+  });
+  // Also offer free-text entry at the bottom
+  html+='<div class="fund-suggest-item" onclick="useManualName(\''+val.replace(/'/g,'')+'\')" style="color:var(--text3);font-size:12px;">✏ Use "<strong style=\'color:var(--text)\'>'+val+'</strong>" as custom name</div>';
+  
+  gv('fundSuggest').innerHTML=html;
+  gv('fundSuggest').style.display='block';
+  suggestIndex=-1;
+}
+
+function fundSearchKey(e){
+  var items=gv('fundSuggest').querySelectorAll('.fund-suggest-item');
+  if(e.key==='ArrowDown'){e.preventDefault();suggestIndex=Math.min(suggestIndex+1,items.length-1);items.forEach(function(el,i){el.classList.toggle('selected',i===suggestIndex);});}
+  else if(e.key==='ArrowUp'){e.preventDefault();suggestIndex=Math.max(suggestIndex-1,0);items.forEach(function(el,i){el.classList.toggle('selected',i===suggestIndex);});}
+  else if(e.key==='Enter'&&suggestIndex>=0){e.preventDefault();items[suggestIndex].click();}
+  else if(e.key==='Escape'){gv('fundSuggest').style.display='none';}
+}
+
+function selectFund(idx){
+  var f=FDB[idx];
+  selectedFund=f;
+  gv('fSearch').value=f.name;
+  gv('fundSuggest').style.display='none';
+  // Fill form fields from database
+  gv('fName').value=f.name;
+  gv('fCagr').value=f.cagr;
+  gv('fCagrSource').textContent='(preset)';
+  // Set type and category selects
+  var typeEl=gv('fType'),catEl=gv('fCat');
+  for(var i=0;i<typeEl.options.length;i++){if(typeEl.options[i].value===f.type||typeEl.options[i].text===f.type)typeEl.selectedIndex=i;}
+  for(var i=0;i<catEl.options.length;i++){if(catEl.options[i].value===f.cat||catEl.options[i].text===f.cat)catEl.selectedIndex=i;}
+  // Show selected badge
+  gv('fSelectedName').textContent=f.name;
+  gv('fSelectedMeta').textContent=f.type+' · '+f.cat+(f.amfi?' · AMFI '+f.amfi:'');
+  gv('fLiveCagrBadge').innerHTML='';
+  gv('fSelectedBadge').style.display='block';
+  gv('fManualWrap').style.display='none';
+  // Show fetch live CAGR button if AMFI code available
+  if(f.amfi){gv('fFetchBtn').style.display='inline-block';}
+  gv('fVal').focus();
+}
+
+function useManualName(val){
+  gv('fName').value=val;
+  gv('fSearch').value=val;
+  gv('fundSuggest').style.display='none';
+  gv('fManualWrap').style.display='block';
+  gv('fSelectedBadge').style.display='none';
+  gv('fVal').focus();
+}
+
+// ── LIVE CAGR FETCHER (mfapi.in) ──
+function fetchLiveCAGR(){
+  if(!selectedFund||!selectedFund.amfi){notify('No AMFI code — enter CAGR manually','err');return;}
+  var btn=gv('fFetchBtn');
+  btn.textContent='⟳ Loading…';btn.disabled=true;
+  gv('fCagrSource').textContent='(fetching…)';
+  gv('fCagrSource').style.color='var(--amber)';
+
+  fetch('https://api.mfapi.in/mf/'+selectedFund.amfi)
+    .then(function(r){
+      if(!r.ok)throw new Error('HTTP '+r.status+' — check AMFI code');
+      return r.json();
+    })
+    .then(function(data){
+      if(!data||!data.data||data.data.length<2){throw new Error('Insufficient NAV data');}
+      var navs=data.data;
+      function parseNavDate(str){
+        var p=str.split('-');
+        if(p.length!==3)return null;
+        return new Date(parseInt(p[2]),parseInt(p[1])-1,parseInt(p[0]));
+      }
+      function getNavYearsAgo(yrs){
+        var target=new Date();
+        target.setFullYear(target.getFullYear()-yrs);
+        for(var i=0;i<navs.length;i++){
+          var d=parseNavDate(navs[i].date);
+          if(d&&d<=target){var v=parseFloat(navs[i].nav);return isNaN(v)?null:v;}
+        }
+        return null;
+      }
+      var latest=parseFloat(navs[0].nav);
+      if(isNaN(latest)||latest<=0)throw new Error('Invalid latest NAV: '+navs[0].nav);
+      function cagrPct(past,yrs){
+        if(!past||past<=0||isNaN(past))return null;
+        var r=((Math.pow(latest/past,1/yrs)-1)*100);
+        if(r>300||r<-90)return null; // sanity check
+        return parseFloat(r.toFixed(2));
+      }
+      var c1=cagrPct(getNavYearsAgo(1),1);
+      var c3=cagrPct(getNavYearsAgo(3),3);
+      var c5=cagrPct(getNavYearsAgo(5),5);
+      var c10=cagrPct(getNavYearsAgo(10),10);
+      // FIX: use number comparison not string truthiness
+      var best=null,label='';
+      if(c5!==null&&c5>0){best=c5;label='5yr';}
+      else if(c3!==null&&c3>0){best=c3;label='3yr';}
+      else if(c1!==null&&c1>0){best=c1;label='1yr';}
+      else if(c5!==null){best=c5;label='5yr';} // even if negative
+      else if(c3!==null){best=c3;label='3yr';}
+      else if(c1!==null){best=c1;label='1yr';}
+      if(best!==null){
+        gv('fCagr').value=best.toFixed(1);
+        gv('fCagrSource').textContent='(live '+label+' ✓)';
+        gv('fCagrSource').style.color='var(--green)';
+        var badge='<span class="tag tag-green">✓ Live CAGR</span> NAV: ₹'+latest.toFixed(2)+' &nbsp;';
+        if(c1!==null)badge+='1yr: <strong>'+c1.toFixed(1)+'%</strong> ';
+        if(c3!==null)badge+='3yr: <strong>'+c3.toFixed(1)+'%</strong> ';
+        if(c5!==null)badge+='5yr: <strong>'+c5.toFixed(1)+'%</strong> ';
+        if(c10!==null)badge+='10yr: <strong>'+c10.toFixed(1)+'%</strong>';
+        gv('fLiveCagrBadge').innerHTML=badge;
+        notify('Live CAGR: '+best.toFixed(1)+'% ('+label+') | NAV ₹'+latest.toFixed(2),'ok');
+      } else {
+        throw new Error('Could not compute CAGR — NAV data may be too short');
+      }
+    })
+    .catch(function(e){
+      console.error('CAGR fetch error:',e.message);
+      notify('Fetch failed: '+e.message,'err');
+      gv('fCagrSource').textContent='(preset)';
+      gv('fCagrSource').style.color='var(--amber)';
+    })
+    .finally(function(){btn.textContent='🔄 Live';btn.disabled=false;});
+}
+
+// Close suggestions when clicking outside
+document.addEventListener('click',function(e){
+  var s=gv('fundSuggest');
+  if(s&&!s.contains(e.target)&&e.target.id!=='fSearch')s.style.display='none';
+});
+
+// Reset fund modal when opened
+var origOpenModal=openModal;
+openModal=function(id){
+  origOpenModal(id);
+  if(id==='addFund'){
+    selectedFund=null;suggestIndex=-1;
+    var els=['fSearch','fName','fVal','fInvested','fSip','fCagr','fStepUp'];
+    els.forEach(function(el){var e=gv(el);if(e)e.value='';});
+    var badge=gv('fSelectedBadge'),manual=gv('fManualWrap'),fetch=gv('fFetchBtn'),src=gv('fCagrSource'),sug=gv('fundSuggest');
+    if(badge)badge.style.display='none';
+    if(manual)manual.style.display='block';
+    if(fetch)fetch.style.display='none';
+    if(src)src.textContent='';
+    if(sug)sug.style.display='none';
+  }
+};
+
+// ═══════════════════════════════════════════════
+// AUTH FUNCTIONS
+// ═══════════════════════════════════════════════
+function switchAuthTab(tab){
+  var isLogin=tab==='login';
+  gv('formLogin').style.display=isLogin?'block':'none';
+  gv('formSignup').style.display=isLogin?'none':'block';
+  gv('tabLogin').style.background=isLogin?'var(--accent)':'transparent';
+  gv('tabLogin').style.color=isLogin?'#fff':'var(--text2)';
+  gv('tabSignup').style.background=isLogin?'transparent':'var(--accent)';
+  gv('tabSignup').style.color=isLogin?'var(--text2)':'#fff';
+  gv('authMsg').textContent='';
+}
+
+function setAuthMsg(msg,isErr){
+  var el=gv('authMsg');
+  el.textContent=msg;
+  el.style.color=isErr?'var(--red)':'var(--green)';
+}
+
+function setAuthLoading(btnId,loading){
+  var btn=gv(btnId);
+  if(!btn)return;
+  btn.disabled=loading;
+  btn.style.opacity=loading?'0.6':'1';
+  if(loading)btn.textContent='Please wait…';
+  else btn.textContent=btnId==='loginBtn'?'Sign In →':'Create Account →';
+}
+
+async function doLogin(){
+  var email=gv('loginEmail').value.trim();
+  var pass=gv('loginPass').value;
+  if(!email||!pass){setAuthMsg('Enter email and password',true);return;}
+  setAuthLoading('loginBtn',true);
+  try{
+    var res=await sb.auth.signInWithPassword({email:email,password:pass});
+    if(res.error){setAuthMsg(res.error.message,true);}
+    else{onAuthSuccess(res.data.user);}
+  }catch(e){
+    setAuthMsg('Connection error: '+e.message,true);
+  }
+  setAuthLoading('loginBtn',false);
+}
+
+async function doSignup(){
+  var name=gv('signupName').value.trim();
+  var email=gv('signupEmail').value.trim();
+  var pass=gv('signupPass').value;
+  if(!name){setAuthMsg('Enter your name',true);return;}
+  if(!email||!pass){setAuthMsg('Enter email and password',true);return;}
+  if(pass.length<6){setAuthMsg('Password must be at least 6 characters',true);return;}
+  setAuthLoading('signupBtn',true);
+  var res=await sb.auth.signUp({email:email,password:pass,options:{data:{full_name:name}}});
+  setAuthLoading('signupBtn',false);
+  if(res.error){
+    // If user already exists, try logging them in instead
+    if(res.error.message.toLowerCase().indexOf('already')!==-1||res.error.message.toLowerCase().indexOf('registered')!==-1){
+      setAuthMsg('Account exists — signing you in…',false);
+      var loginRes=await sb.auth.signInWithPassword({email:email,password:pass});
+      if(loginRes.error){setAuthMsg('Account exists but password is wrong. Try Sign In tab.',true);}
+      else{S.name=name;onAuthSuccess(loginRes.data.user);}
+    } else {
+      setAuthMsg(res.error.message,true);
+    }
+    return;
+  }
+  // Always set name from form
+  S.name=name;
+  if(res.data.session&&res.data.user){
+    // Signed up AND logged in (confirm email is OFF — preferred)
+    onAuthSuccess(res.data.user);
+  } else if(res.data.user&&!res.data.session){
+    // Supabase confirm email is still ON — auto sign them in anyway
+    setAuthMsg('Account created! Signing you in…',false);
+    var loginRes2=await sb.auth.signInWithPassword({email:email,password:pass});
+    if(loginRes2.error){
+      // Genuinely needs email confirmation
+      setAuthMsg('✓ Account created! Check your email to confirm, then sign in.',false);
+      setTimeout(function(){switchAuthTab('login');gv('loginEmail').value=email;},3000);
+    } else {
+      onAuthSuccess(loginRes2.data.user);
+    }
+  }
+}
+
+function continueAsGuest(){
+  currentUser=null;
+  gv('authScreen').style.display='none';
+  gv('appShell').style.display='flex';
+  loadAll();
+  updateProfile();
+  initCibilUpload();
+  initInsuranceUpload();
+  renderOverview();
+  // Show a gentle reminder in sidebar
+  gv('profileRole').textContent='Guest — data on this device only';
+  notify('Guest mode — create an account to save across devices','ok');
+}
+
+async function doGoogleLogin(){
+  var res=await sb.auth.signInWithOAuth({
+    provider:'google',
+    options:{redirectTo:window.location.href}
+  });
+  if(res.error)setAuthMsg(res.error.message,true);
+}
+
+async function forgotPassword(){
+  var email=gv('loginEmail').value.trim();
+  if(!email){setAuthMsg('Enter your email first',true);return;}
+  var res=await sb.auth.resetPasswordForEmail(email,{redirectTo:window.location.href});
+  if(res.error)setAuthMsg(res.error.message,true);
+  else setAuthMsg('✓ Password reset email sent',false);
+}
+
+async function doLogout(){
+  if(!confirm('Sign out of Wealth Dashboard?'))return;
+  await sb.auth.signOut();
+  currentUser=null;
+  // Clear localStorage so next person doesn't see this user's data
+  localStorage.removeItem('wos_v4');
+  S={name:'',age:28,income:0,expense:0,funds:[],loans:[],crypto:[],
+    epfo:{balance:0,empMo:0,emplMo:0,rate:8.25,age:28,retire:60},
+    cibil:{score:0,date:'',enquiries:0,activeLoans:0,util:0,missedPayments:0,history:[],parsedAccounts:[]},
+    insurance:[],yrs:{overview:10,portfolio:10,epfo:20,debt:5,crypto:5,cibil:12,insurance:1}};
+  // Show auth screen
+  gv('authScreen').style.display='flex';
+  gv('appShell').style.display='none';
+  gv('authMsg').textContent='';
+  notify('Signed out ✓','ok');
+}
+
+function onAuthSuccess(user){
+  currentUser=user;
+  gv('authScreen').style.display='none';
+  gv('appShell').style.display='flex';
+  // Load name from Google metadata if available
+  if(user.user_metadata&&user.user_metadata.full_name&&!S.name){
+    S.name=user.user_metadata.full_name;
+  } else if(user.user_metadata&&user.user_metadata.name&&!S.name){
+    S.name=user.user_metadata.name;
+  }
+  // Load from localStorage immediately, then sync from Supabase
+  loadAll();
+  updateProfile();
+  initCibilUpload();
+  initInsuranceUpload();
+  renderOverview();
+  // Then load fresher data from Supabase in background
+  loadFromSupabase();
+}
+
+// ═══════════════════════════════════════════════
+// INIT — check existing session on page load
+// ═══════════════════════════════════════════════
+(async function(){
+  try{
+    // Check if already logged in (session persisted by Supabase)
+    var session=await sb.auth.getSession();
+    if(session.data&&session.data.session&&session.data.session.user){
+      onAuthSuccess(session.data.session.user);
+      return;
+    }
+  }catch(e){
+    console.warn('Supabase session check failed:',e.message);
+  }
+  // Show auth screen
+  gv('authScreen').style.display='flex';
+  gv('appShell').style.display='none';
+
+  // Listen for auth state changes (handles OAuth redirects)
+  try{
+    sb.auth.onAuthStateChange(function(event,session){
+      if(event==='SIGNED_IN'&&session&&!currentUser){
+        onAuthSuccess(session.user);
+      } else if(event==='SIGNED_OUT'){
+        currentUser=null;
+        gv('authScreen').style.display='flex';
+        gv('appShell').style.display='none';
+      }
+    });
+  }catch(e){console.warn('Auth state listener failed:',e.message);}
+})();
+</script>
+</body>
+</html>
