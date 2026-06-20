@@ -1460,65 +1460,70 @@ function parseCIBILReport(text){
   // ═══════════════════════════════════════════════════
   S.cibil.parsedAccounts=[];
 
-  // ── ACCOUNT PARSER v6 — TESTED AGAINST REAL REPORT ──
-  // KEY INSIGHT: This CIBIL PDF has financial fields (Current Balance, EMI etc)
-  // appearing BEFORE the "Member Name\nLENDER" block, not after.
-  // pdf.js extracts in reading order so we must look BACKWARDS from each
-  // Member Name to find that account's financial data.
+  // ── ACCOUNT PARSER v7 — NO SECTION HEADERS REQUIRED ──
+  // Debug showed: "ALL ACCOUNTS" NOT in PDF text, but 65 "Member Name" found.
+  // Fix: scan ALL Member Name occurrences in full text,
+  // use Date Closed to distinguish open vs closed accounts.
+  // Financial fields appear BEFORE each Member Name block (two-column PDF layout).
 
-  var accountsStart=text.indexOf('ALL ACCOUNTS');
-  var closedStart=text.indexOf('CLOSED ACCOUNTS');
   var enquiryStart=text.indexOf('ENQUIRY DETAILS');
+  // Use full text up to ENQUIRY DETAILS (removes enquiry section noise)
+  var fullScanText=enquiryStart>=0?text.slice(0,enquiryStart):text;
 
-  // Only parse the OPEN ACCOUNTS section
-  var openText=text.slice(
-    accountsStart>=0?accountsStart:0,
-    closedStart>=0?closedStart:(enquiryStart>=0?enquiryStart:text.length)
-  );
-
-  // Find all "Member Name\n[LENDER]" positions in open section
+  // Find all Member Name positions in full text
   var memberPositions=[];
   var mnRe=/Member Name\n([^\n]+)/g;
   var mnM;
-  while((mnM=mnRe.exec(openText))!==null){
-    memberPositions.push({pos:mnM.index,end:mnM.index+mnM[0].length,lender:mnM[1].trim()});
+  while((mnM=mnRe.exec(fullScanText))!==null){
+    var lenderName=mnM[1].trim();
+    // Skip inline enquiry entries like "Member Name SMICC" (no newline, different format)
+    if(lenderName&&lenderName.length>=2&&lenderName!=='Member Name'){
+      memberPositions.push({pos:mnM.index,end:mnM.index+mnM[0].length,lender:lenderName});
+    }
   }
+
+  console.log('v7 parser: found',memberPositions.length,'Member Name blocks');
 
   memberPositions.forEach(function(mp,idx){
     var lender=mp.lender;
-    if(!lender||lender.length<2||lender==='Member Name')return;
 
-    // Financial fields = text from PREVIOUS member's end to THIS member's start
+    // Financial fields = text between PREVIOUS member end and THIS member start
     var prevEnd=idx>0?memberPositions[idx-1].end:0;
-    var financialText=openText.slice(prevEnd,mp.pos);
+    var financialText=fullScanText.slice(prevEnd,mp.pos);
 
-    // Detail fields = text from THIS member's end to NEXT member's start
-    var nextPos=idx<memberPositions.length-1?memberPositions[idx+1].pos:openText.length;
-    var detailText=openText.slice(mp.end,nextPos);
+    // Detail fields = text from THIS member end to NEXT member start
+    var nextPos=idx<memberPositions.length-1?memberPositions[idx+1].pos:fullScanText.length;
+    var detailText=fullScanText.slice(mp.end,nextPos);
 
     // Account Type
     var accType='Personal Loan';
     var atm=detailText.match(/Account Type\n([^\n]+)/);
     if(atm)accType=atm[1].trim();
 
-    // Date Closed (in detail text)
+    // Date Closed — determines open vs closed
+    // Check BOTH financialText and detailText since layout varies
     var isClosed=false;
-    var dcm=detailText.match(/Date Closed\s*\n?([^\n]{1,30})/);
-    if(dcm){var dcv=dcm[1].trim();if(dcv&&dcv!=='-'&&/\d{2}\/\d{2}\/\d{4}/.test(dcv))isClosed=true;}
+    var allText=financialText+detailText;
+    var dcm=allText.match(/Date Closed\s*\n?([^\n]{1,30})/);
+    if(dcm){
+      var dcv=dcm[1].trim();
+      // A real date = closed; "-" or blank = open
+      if(dcv&&dcv!=='-'&&dcv!=='–'&&/\d{2}\/\d{2}\/\d{4}/.test(dcv))isClosed=true;
+    }
 
-    // Current Balance — check financial text FIRST, then detail text
+    // Current Balance — check financial text first (it's usually there), then detail
     var balance=0;
     var cbm=financialText.match(/Current Balance\s*[₹\s]*([\d,]+)/)||
              detailText.match(/Current Balance\s*[₹\s]*([\d,]+)/);
     if(cbm)balance=parseInt(cbm[1].replace(/,/g,''))||0;
 
-    // EMI
+    // EMI Amount
     var emi=0;
     var emm=financialText.match(/EMI Amount\s*[₹\s]*([\d,]+)/)||
              detailText.match(/EMI Amount\s*[₹\s]*([\d,]+)/);
     if(emm)emi=parseInt(emm[1].replace(/,/g,''))||0;
 
-    // Also check Actual Payment Amount as fallback for EMI
+    // Actual Payment Amount as EMI fallback
     if(!emi){
       var apm=financialText.match(/Actual Payment Amount\s*[₹\s]*([\d,]+)/)||
                detailText.match(/Actual Payment Amount\s*[₹\s]*([\d,]+)/);
@@ -1531,6 +1536,7 @@ function parseCIBILReport(text){
              detailText.match(/Rate of Interest\s*\n?([\d.]+)/);
     if(rim)rate=parseFloat(rim[1])||0;
 
+    // Only include OPEN accounts with a real balance
     if(!isClosed&&balance>0){
       if(!rate){
         var tl=accType.toLowerCase();
@@ -1541,9 +1547,14 @@ function parseCIBILReport(text){
         else rate=15;
       }
       if(!emi)emi=Math.round(balance*(rate/100/12)/(1-Math.pow(1+rate/100/12,-36)));
-      S.cibil.parsedAccounts.push({
-        id:'pa'+idx,lender:lender,type:accType,balance:balance,emi:emi,rate:rate
-      });
+
+      // Deduplicate — same lender may appear multiple times (e.g. SMICC open + closed)
+      var already=S.cibil.parsedAccounts.some(function(x){return x.lender===lender;});
+      if(!already){
+        S.cibil.parsedAccounts.push({
+          id:'pa'+idx,lender:lender,type:accType,balance:balance,emi:emi,rate:rate
+        });
+      }
     }
   });
 
@@ -1553,8 +1564,6 @@ function parseCIBILReport(text){
   // Show parse debug in UI
   var debugInfo='';
   debugInfo+='Score: '+(score||'not found')+' | ';
-  debugInfo+='ALL ACCOUNTS found: '+(text.indexOf('ALL ACCOUNTS')>=0?'yes':'NO - TEXT MAY BE WRONG')+' | ';
-  debugInfo+='CLOSED ACCOUNTS found: '+(text.indexOf('CLOSED ACCOUNTS')>=0?'yes':'no')+' | ';
   debugInfo+='Member Names found: '+memberPositions.length+' | ';
   debugInfo+='Open accounts: '+S.cibil.parsedAccounts.length;
   console.log('Debug:',debugInfo);
@@ -1612,9 +1621,9 @@ function parseCIBILReport(text){
       '<strong class="red">No open accounts extracted.</strong><br><br>'+
       'Debug info:<br>'+
       '• PDF text length: '+text.length+' chars<br>'+
-      '• "ALL ACCOUNTS" found: '+(allAccountsIdx>=0?'YES at pos '+allAccountsIdx:'NO ❌')+('<br>')+
-      '• "CLOSED ACCOUNTS" found: '+(text.indexOf('CLOSED ACCOUNTS')>=0?'YES':'NO')+('<br>')+
-      '• "Member Name" occurrences: '+memberCount+('<br>')+
+      '• Member Name count in PDF: '+memberCount+' (need > 0)'+'<br>'+
+      '• ENQUIRY DETAILS found: '+(text.indexOf('ENQUIRY DETAILS')>=0?'YES':'NO')+'<br>'+
+      '• Open accounts found: '+S.cibil.parsedAccounts.length+'<br>'+
       '• First 200 chars of extracted text:<br>'+
       '<pre style="font-size:10px;color:var(--text3);white-space:pre-wrap;margin-top:6px;overflow:auto;max-height:100px;">'+
       text.slice(0,200).replace(/</g,'&lt;')+'</pre>'+
