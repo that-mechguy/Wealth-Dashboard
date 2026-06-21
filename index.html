@@ -1460,58 +1460,56 @@ function parseCIBILReport(text){
   // ═══════════════════════════════════════════════════
   S.cibil.parsedAccounts=[];
 
-  // ── ACCOUNT PARSER v7 — NO SECTION HEADERS REQUIRED ──
-  // Debug showed: "ALL ACCOUNTS" NOT in PDF text, but 65 "Member Name" found.
-  // Fix: scan ALL Member Name occurrences in full text,
-  // use Date Closed to distinguish open vs closed accounts.
-  // Financial fields appear BEFORE each Member Name block (two-column PDF layout).
+  // ── ACCOUNT PARSER v9 — VERIFIED AGAINST REAL REPORT ──
+  // Fixes vs v8:
+  // 1. NO deduplication by lender name — AXIS BANK has 3 open accounts!
+  // 2. Date Closed checked in detailText FIRST (it appears after Member Name block)
+  // 3. Balance from financialText (before Member Name) - correct two-column layout
+  // 4. Inline v8 strategy removed — real PDF has clean newlines when printed properly
+  // 5. Page URL lines (https://myscore.cibil.com/...) ignored automatically
 
   var enquiryStart=text.indexOf('ENQUIRY DETAILS');
-  // Use full text up to ENQUIRY DETAILS (removes enquiry section noise)
   var fullScanText=enquiryStart>=0?text.slice(0,enquiryStart):text;
 
-  // Find all Member Name positions in full text
+  // Find all Member Name\n[LENDER] positions
   var memberPositions=[];
   var mnRe=/Member Name\n([^\n]+)/g;
   var mnM;
   while((mnM=mnRe.exec(fullScanText))!==null){
-    var lenderName=mnM[1].trim();
-    // Skip inline enquiry entries like "Member Name SMICC" (no newline, different format)
-    if(lenderName&&lenderName.length>=2&&lenderName!=='Member Name'){
-      memberPositions.push({pos:mnM.index,end:mnM.index+mnM[0].length,lender:lenderName});
-    }
+    var ln=mnM[1].trim();
+    if(ln&&ln.length>=2&&ln!=='Member Name')
+      memberPositions.push({pos:mnM.index,end:mnM.index+mnM[0].length,lender:ln});
   }
-
-  console.log('v7 parser: found',memberPositions.length,'Member Name blocks');
+  console.log('v9 parser: found',memberPositions.length,'Member Name blocks');
 
   memberPositions.forEach(function(mp,idx){
     var lender=mp.lender;
 
-    // Financial fields = text between PREVIOUS member end and THIS member start
+    // Financial text = between PREVIOUS member end and THIS member start
+    // (contains Current Balance, EMI, Rate for this account)
     var prevEnd=idx>0?memberPositions[idx-1].end:0;
     var financialText=fullScanText.slice(prevEnd,mp.pos);
 
-    // Detail fields = text from THIS member end to NEXT member start
+    // Detail text = from THIS member end to NEXT member start
+    // (contains Account Type, Date Closed, Account Number)
     var nextPos=idx<memberPositions.length-1?memberPositions[idx+1].pos:fullScanText.length;
     var detailText=fullScanText.slice(mp.end,nextPos);
 
-    // Account Type
+    // Account Type (in detailText after Member Name)
     var accType='Personal Loan';
     var atm=detailText.match(/Account Type\n([^\n]+)/);
     if(atm)accType=atm[1].trim();
 
-    // Date Closed — determines open vs closed
-    // Check BOTH financialText and detailText since layout varies
+    // Date Closed — CRITICAL: check detailText first, then financialText
     var isClosed=false;
-    var allText=financialText+detailText;
-    var dcm=allText.match(/Date Closed\s*\n?([^\n]{1,30})/);
+    var dcm=detailText.match(/Date Closed\s*\n?([^\n]{1,30})/)||
+             financialText.match(/Date Closed\s*\n?([^\n]{1,30})/);
     if(dcm){
       var dcv=dcm[1].trim();
-      // A real date = closed; "-" or blank = open
       if(dcv&&dcv!=='-'&&dcv!=='–'&&/\d{2}\/\d{2}\/\d{4}/.test(dcv))isClosed=true;
     }
 
-    // Current Balance — check financial text first (it's usually there), then detail
+    // Current Balance — from financialText first (two-column PDF: balance before Member Name)
     var balance=0;
     var cbm=financialText.match(/Current Balance\s*[₹\s]*([\d,]+)/)||
              detailText.match(/Current Balance\s*[₹\s]*([\d,]+)/);
@@ -1536,25 +1534,25 @@ function parseCIBILReport(text){
              detailText.match(/Rate of Interest\s*\n?([\d.]+)/);
     if(rim)rate=parseFloat(rim[1])||0;
 
-    // Only include OPEN accounts with a real balance
+    // Only add OPEN accounts with positive balance
+    // NO deduplication — same lender can have multiple open accounts
     if(!isClosed&&balance>0){
       if(!rate){
         var tl=accType.toLowerCase();
         if(tl.indexOf('credit card')!==-1)rate=36;
-        else if(tl.indexOf('personal')!==-1)rate=16;
-        else if(tl.indexOf('consumer')!==-1)rate=14;
         else if(tl.indexOf('home')!==-1)rate=9;
-        else rate=15;
+        else if(tl.indexOf('consumer')!==-1)rate=14;
+        else rate=16;
       }
       if(!emi)emi=Math.round(balance*(rate/100/12)/(1-Math.pow(1+rate/100/12,-36)));
-
-      // Deduplicate — same lender may appear multiple times (e.g. SMICC open + closed)
-      var already=S.cibil.parsedAccounts.some(function(x){return x.lender===lender;});
-      if(!already){
-        S.cibil.parsedAccounts.push({
-          id:'pa'+idx,lender:lender,type:accType,balance:balance,emi:emi,rate:rate
-        });
-      }
+      S.cibil.parsedAccounts.push({
+        id:'pa'+idx,
+        lender:lender,
+        type:accType,
+        balance:balance,
+        emi:emi,
+        rate:rate
+      });
     }
   });
 
