@@ -1978,13 +1978,18 @@ function detectAndParseHoldings(rows,filename){
   var fname=filename.toLowerCase();
 
   // ── GROWW STOCKS format ──
-  // Row 11 (idx 10): headers — Stock Name, ISIN, Quantity, Average buy price, Buy value, Closing price, Closing value, Unrealised P&L
-  // Row 12+: data
-  if(fname.indexOf('stock')!==-1||fname.indexOf('holding')!==-1){
-    var stockHdrIdx=-1;
-    for(var i=0;i<rows.length;i++){
-      var r0=(rows[i][0]||'').toString().toLowerCase().trim();
-      if(r0==='stock name'||r0==='symbol'||r0==='scrip'){stockHdrIdx=i;break;}
+  // Scan all rows for header — don't rely on filename or fixed row number
+  var stockHdrIdx=-1;
+  for(var i=0;i<rows.length;i++){
+    var r0=(rows[i][0]||'').toString().toLowerCase().trim();
+    if(r0==='stock name'||r0==='symbol'||r0==='scrip'){stockHdrIdx=i;break;}
+  }
+  if(stockHdrIdx>=0||fname.indexOf('stock')!==-1||fname.indexOf('holding')!==-1){
+    if(stockHdrIdx<0){
+      for(var i=0;i<rows.length;i++){
+        var r0=(rows[i][0]||'').toString().toLowerCase().trim();
+        if(r0==='stock name'||r0==='symbol'||r0==='scrip'){stockHdrIdx=i;break;}
+      }
     }
     if(stockHdrIdx>=0){
       var hdrs=rows[stockHdrIdx].map(function(h){return(h||'').toString().toLowerCase().trim();});
@@ -2023,13 +2028,18 @@ function detectAndParseHoldings(rows,filename){
   }
 
   // ── GROWW MUTUAL FUNDS format ──
-  // Row 21 (idx 20): headers — Scheme Name, AMC, Category, Sub-category, Folio No., Source, Units, Invested Value, Current Value, Returns, XIRR
-  // Row 23+: data (row 22 is blank)
-  if(fname.indexOf('mutual')||fname.indexOf('mf')||fname.indexOf('fund')){
-    var mfHdrIdx=-1;
-    for(var i=0;i<rows.length;i++){
-      var r0=(rows[i][0]||'').toString().toLowerCase().trim();
-      if(r0==='scheme name'||r0==='scheme'||r0==='fund name'){mfHdrIdx=i;break;}
+  // Scan all rows for header — works regardless of filename or row position
+  var mfHdrIdx=-1;
+  for(var i=0;i<rows.length;i++){
+    var r0=(rows[i][0]||'').toString().toLowerCase().trim();
+    if(r0==='scheme name'||r0==='scheme'||r0==='fund name'){mfHdrIdx=i;break;}
+  }
+  if(mfHdrIdx>=0||fname.indexOf('mutual')!==-1||fname.indexOf('fund')!==-1){
+    if(mfHdrIdx<0){
+      for(var i=0;i<rows.length;i++){
+        var r0=(rows[i][0]||'').toString().toLowerCase().trim();
+        if(r0==='scheme name'||r0==='scheme'||r0==='fund name'){mfHdrIdx=i;break;}
+      }
     }
     if(mfHdrIdx>=0){
       var hdrs=rows[mfHdrIdx].map(function(h){return(h||'').toString().toLowerCase().trim();});
