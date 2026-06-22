@@ -1976,93 +1976,142 @@ function parseCSV(text){
 function detectAndParseHoldings(rows,filename){
   if(!rows||rows.length<2)return[];
   var fname=filename.toLowerCase();
-  var headers=rows[0].map(function(h){return (h||'').toString().toLowerCase().trim();});
-  
-  // Detect broker format from filename and headers
-  var broker='unknown';
-  if(fname.indexOf('groww')!==-1)broker='groww';
-  else if(fname.indexOf('zerodha')!==-1||fname.indexOf('kite')!==-1)broker='zerodha';
-  else if(fname.indexOf('coin')!==-1)broker='coin';
-  else if(fname.indexOf('paytm')!==-1)broker='paytm';
-  
-  // Auto-detect from headers
-  if(broker==='unknown'){
-    var headerStr=headers.join(',');
-    if(headerStr.indexOf('scheme')!==-1||headerStr.indexOf('folio')!==-1)broker='mf'; // mutual fund
-    if(headerStr.indexOf('symbol')!==-1&&headerStr.indexOf('qty')!==-1)broker='stock';
-    if(headerStr.indexOf('current value')!==-1)broker='groww';
+
+  // ── GROWW STOCKS format ──
+  // Row 11 (idx 10): headers — Stock Name, ISIN, Quantity, Average buy price, Buy value, Closing price, Closing value, Unrealised P&L
+  // Row 12+: data
+  if(fname.indexOf('stock')!==-1||fname.indexOf('holding')!==-1){
+    var stockHdrIdx=-1;
+    for(var i=0;i<rows.length;i++){
+      var r0=(rows[i][0]||'').toString().toLowerCase().trim();
+      if(r0==='stock name'||r0==='symbol'||r0==='scrip'){stockHdrIdx=i;break;}
+    }
+    if(stockHdrIdx>=0){
+      var hdrs=rows[stockHdrIdx].map(function(h){return(h||'').toString().toLowerCase().trim();});
+      var nIdx=hdrs.indexOf('stock name');if(nIdx<0)nIdx=0;
+      var qIdx=hdrs.indexOf('quantity');
+      var bvIdx=hdrs.indexOf('buy value');if(bvIdx<0)bvIdx=hdrs.indexOf('invested value');
+      var cvIdx=hdrs.indexOf('closing value');if(cvIdx<0)cvIdx=hdrs.indexOf('current value');
+      var cpIdx=hdrs.indexOf('closing price');
+
+      var holdings=[];
+      for(var r=stockHdrIdx+1;r<rows.length;r++){
+        var row=rows[r];
+        var name=(row[nIdx]||'').toString().trim();
+        if(!name)continue;
+        var qty=parseFloat((row[qIdx]||'').toString().replace(/,/g,''))||0;
+        var invested=parseFloat((row[bvIdx]||'0').toString().replace(/[₹,\s]/g,''))||0;
+        var value=parseFloat((row[cvIdx]||'0').toString().replace(/[₹,\s]/g,''))||0;
+        var cp=parseFloat((row[cpIdx]||'0').toString().replace(/[₹,\s]/g,''))||0;
+        if(!value&&qty&&cp)value=qty*cp;
+        if(!invested&&value)invested=value;
+        if(!name||(!value&&!invested))continue;
+
+        // Detect if ETF vs stock
+        var nameU=name.toUpperCase();
+        var type='Stock';
+        var cat='Equity';
+        if(nameU.indexOf('ETF')!==-1||nameU.indexOf('BEES')!==-1||nameU.indexOf('NIFTY')!==-1||
+           nameU.indexOf('NASDAQ')!==-1||nameU.indexOf('METAL')!==-1||nameU.indexOf('GOLD')!==-1||
+           nameU.indexOf('SILVER')!==-1||nameU.indexOf('TATAAML')!==-1||nameU.indexOf('GROWWAMC')!==-1){
+          type='ETF';cat='ETF';
+        }
+        holdings.push({id:'h'+Date.now()+r,name:name,type:type,category:cat,value:Math.round(value*100)/100,invested:Math.round(invested*100)/100,sip:0,cagr:type==='ETF'?13:15,broker:'groww-stocks'});
+      }
+      return holdings;
+    }
   }
 
-  // Column mapping strategies
-  var colMaps={
-    // Groww MF/stocks: Fund Name, Type, Current Value, Invested, Returns
-    groww:{name:['fund name','name','scheme name','stock name'],value:['current value','current val','mkt value'],invested:['invested','total invested','invest value'],sip:['monthly sip','sip amount'],category:['type','category','asset class']},
-    // Zerodha Kite: Symbol, Qty, Avg, LTP, P&L, Value
-    zerodha:{name:['symbol','tradingsymbol','instrument'],value:['value','current value','mkt value'],invested:['avg price','avg cost'],quantity:['qty','quantity'],category:['type']},
-    // Zerodha Coin MF: Scheme, Folio, Units, NAV, Value, Invested
-    coin:{name:['scheme','scheme name','fund'],value:['current value','value'],invested:['invested amount','invested','cost'],sip:['sip']},
-    // Generic fallback
-    generic:{name:['name','fund','scheme','symbol','stock','security'],value:['value','current value','market value','mkt val'],invested:['invested','cost','purchase value','avg cost'],sip:['sip','monthly sip'],category:['type','category','asset class','instrument type']}
-  };
-
-  var map=colMaps[broker]||colMaps.generic;
-  
-  function findCol(keys){
-    for(var k=0;k<keys.length;k++){
-      for(var h=0;h<headers.length;h++){
-        if(headers[h].indexOf(keys[k])!==-1)return h;
-      }
+  // ── GROWW MUTUAL FUNDS format ──
+  // Row 21 (idx 20): headers — Scheme Name, AMC, Category, Sub-category, Folio No., Source, Units, Invested Value, Current Value, Returns, XIRR
+  // Row 23+: data (row 22 is blank)
+  if(fname.indexOf('mutual')||fname.indexOf('mf')||fname.indexOf('fund')){
+    var mfHdrIdx=-1;
+    for(var i=0;i<rows.length;i++){
+      var r0=(rows[i][0]||'').toString().toLowerCase().trim();
+      if(r0==='scheme name'||r0==='scheme'||r0==='fund name'){mfHdrIdx=i;break;}
     }
+    if(mfHdrIdx>=0){
+      var hdrs=rows[mfHdrIdx].map(function(h){return(h||'').toString().toLowerCase().trim();});
+      var nIdx=hdrs.indexOf('scheme name');if(nIdx<0)nIdx=hdrs.indexOf('scheme');if(nIdx<0)nIdx=0;
+      var catIdx=hdrs.indexOf('category');
+      var subCatIdx=hdrs.indexOf('sub-category');
+      var invIdx=hdrs.indexOf('invested value');if(invIdx<0)invIdx=hdrs.indexOf('invested');
+      var valIdx=hdrs.indexOf('current value');if(valIdx<0)valIdx=hdrs.indexOf('value');
+      var xirrIdx=hdrs.indexOf('xirr');
+      var amcIdx=hdrs.indexOf('amc');
+
+      var holdings=[];
+      for(var r=mfHdrIdx+1;r<rows.length;r++){
+        var row=rows[r];
+        var name=(row[nIdx]||'').toString().trim();
+        if(!name||name.toLowerCase().indexOf('total')!==-1||name.toLowerCase().indexOf('summary')!==-1)continue;
+        var invested=parseFloat((row[invIdx]||'0').toString().replace(/[₹,\s]/g,''))||0;
+        var value=parseFloat((row[valIdx]||'0').toString().replace(/[₹,\s]/g,''))||0;
+        if(!value&&!invested)continue;
+        if(!invested&&value)invested=value;
+
+        var cat=(subCatIdx>=0?row[subCatIdx]:null)||(catIdx>=0?row[catIdx]:null)||'Mutual Fund';
+        cat=(cat||'').toString().trim();
+        var catL=cat.toLowerCase();
+
+        var type='Mutual Fund';
+        if(catL.indexOf('elss')!==-1)type='ELSS';
+        else if(catL.indexOf('small cap')!==-1)type='Mutual Fund';
+        else if(catL.indexOf('index')!==-1)type='Index Fund';
+        else if(catL.indexOf('multi asset')!==-1)type='Mutual Fund';
+
+        // XIRR as CAGR estimate
+        var xirr=0;
+        if(xirrIdx>=0){
+          var xirrStr=(row[xirrIdx]||'0').toString().replace(/[%\s]/g,'');
+          xirr=parseFloat(xirrStr)||0;
+        }
+        var cagr=xirr>0&&xirr<100?Math.round(xirr*10)/10:type==='ELSS'?13:14;
+
+        holdings.push({id:'h'+Date.now()+r,name:name,type:type,category:cat||type,value:Math.round(value*100)/100,invested:Math.round(invested*100)/100,sip:0,cagr:cagr,broker:'groww-mf'});
+      }
+      return holdings;
+    }
+  }
+
+  // ── GENERIC FALLBACK — scan all rows for a header row ──
+  var hdrIdx=-1;
+  var hdrs=[];
+  for(var i=0;i<rows.length;i++){
+    var row=rows[i];
+    var joined=(row||[]).map(function(c){return(c||'').toString().toLowerCase();}).join(',');
+    if((joined.indexOf('name')!==-1||joined.indexOf('scheme')!==-1||joined.indexOf('symbol')!==-1)&&
+       (joined.indexOf('value')!==-1||joined.indexOf('invested')!==-1)){
+      hdrIdx=i;
+      hdrs=row.map(function(h){return(h||'').toString().toLowerCase().trim();});
+      break;
+    }
+  }
+  if(hdrIdx<0)return[];
+
+  function findCol(keys){
+    for(var k=0;k<keys.length;k++)
+      for(var h=0;h<hdrs.length;h++)
+        if(hdrs[h].indexOf(keys[k])!==-1)return h;
     return -1;
   }
-
-  var nameIdx=findCol(map.name||(colMaps.generic.name));
-  var valIdx=findCol(map.value||(colMaps.generic.value));
-  var invIdx=findCol(map.invested||(colMaps.generic.invested));
-  var sipIdx=findCol(map.sip||['sip']);
-  var catIdx=findCol(map.category||['category']);
-  var qtyIdx=findCol(map.quantity||['qty','quantity']);
-  var priceIdx=findCol(['ltp','price','nav','last price']);
-
-  if(nameIdx===-1&&valIdx===-1)return[]; // can't parse
+  var nIdx=findCol(['name','scheme','symbol','stock','fund']);
+  var valIdx=findCol(['current value','closing value','value','mkt value']);
+  var invIdx=findCol(['invested','buy value','cost','avg']);
+  var catIdx=findCol(['category','type','sub-category']);
+  if(nIdx<0)return[];
 
   var holdings=[];
-  for(var r=1;r<rows.length;r++){
+  for(var r=hdrIdx+1;r<rows.length;r++){
     var row=rows[r];
-    var name=(nameIdx>=0?row[nameIdx]||'':'').toString().trim();
-    if(!name||name.toLowerCase()==='total'||name.toLowerCase()==='grand total')continue;
-    
-    var rawVal=(valIdx>=0?row[valIdx]||'':'').toString().replace(/[₹,\s]/g,'');
-    var rawInv=(invIdx>=0?row[invIdx]||'':'').toString().replace(/[₹,\s]/g,'');
-    var rawSip=(sipIdx>=0?row[sipIdx]||'':'').toString().replace(/[₹,\s]/g,'');
-    var rawQty=(qtyIdx>=0?row[qtyIdx]||'':'').toString().replace(/,/g,'');
-    var rawPrice=(priceIdx>=0?row[priceIdx]||'':'').toString().replace(/[₹,\s]/g,'');
+    var name=(row[nIdx]||'').toString().trim();
+    if(!name)continue;
+    var value=parseFloat(((row[valIdx]||'0')).toString().replace(/[₹,\s]/g,''))||0;
+    var invested=parseFloat(((row[invIdx]||'0')).toString().replace(/[₹,\s]/g,''))||0;
+    if(!value&&!invested)continue;
     var cat=(catIdx>=0?row[catIdx]||'':'').toString().trim();
-
-    var val=parseFloat(rawVal)||0;
-    var inv=parseFloat(rawInv)||0;
-    var sip=parseFloat(rawSip)||0;
-    var qty=parseFloat(rawQty)||0;
-    var price=parseFloat(rawPrice)||0;
-
-    // For stock format: value = qty * ltp
-    if(!val&&qty&&price)val=qty*price;
-    // If no invested but have value, use value as invested
-    if(!inv&&val)inv=val;
-
-    if(!name||(!val&&!inv))continue;
-
-    // Detect type/category
-    var type='Mutual Fund';
-    var catL=cat.toLowerCase();
-    if(catL.indexOf('stock')!==-1||catL.indexOf('equity')!==-1||catL.indexOf('etf')!==-1||name.match(/\b(NSE|BSE|\.NS|\.BO)\b/))type='Stock/ETF';
-    if(catL.indexOf('elss')!==-1)type='ELSS';
-    if(catL.indexOf('index')!==-1)type='Index Fund';
-
-    // Estimate CAGR by type
-    var cagr=type==='Stock/ETF'?15:type==='ELSS'?13:12;
-
-    holdings.push({id:'h'+Date.now()+r,name:name,type:type,category:cat||type,value:val,invested:inv,sip:sip,cagr:cagr,broker:broker});
+    holdings.push({id:'h'+Date.now()+r,name:name,type:'Mutual Fund',category:cat||'Equity',value:value,invested:invested,sip:0,cagr:13,broker:'generic'});
   }
   return holdings;
 }
