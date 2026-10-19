@@ -294,13 +294,11 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     </div>
     <div class="actions">
       <span class="save" id="saveState" aria-live="polite"></span>
-      <button class="btn" id="keyBtn" type="button">Claude key</button>
       <button class="btn" id="outBtn" type="button" hidden>Sign out</button>
       <button class="btn" id="importBtn" type="button">Import Groww files</button>
       <input id="fileIn" type="file" multiple accept=".csv,.xlsx,.xls" hidden>
     </div>
   </header>
-  <div id="keyPanel" hidden></div>
 
   <div class="tabsbar">
     <div class="seg wide" role="tablist" aria-label="Sections">
@@ -488,8 +486,8 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     S.crypto = Array.isArray(d.crypto) ? d.crypto : []; S.debts = Array.isArray(d.debts) ? d.debts : []; S.ins = Array.isArray(d.ins) ? d.ins : [];
     S.cibil = Object.assign({ score: 0, date: '', util: 0, enq: 0, missed: 0, history: [] }, d.cibil || {}); if (!Array.isArray(S.cibil.history)) S.cibil.history = [];
     S.profile = Object.assign({ income: 0, expense: 0, extra: 0 }, d.profile || {}); S.settings = d.settings && typeof d.settings === 'object' ? d.settings : {};
-    if (!S.settings.anthropic_key && lsGet()) { S.settings.anthropic_key = lsGet(); setTimeout(function () { markDirty(true); }, 300); }
-    else if (S.settings.anthropic_key) lsSet(S.settings.anthropic_key);
+    if (S.settings.anthropic_key) { delete S.settings.anthropic_key; setTimeout(function () { markDirty(true); }, 300); }
+    lsSet('');
     S.horizon = HORIZONS.indexOf(d.horizon) >= 0 ? d.horizon : 10;
     S.scenario = SCEN[d.scenario] != null ? d.scenario : 'base';
     S.asOf = d.asOf || ''; S.source = d.source || ''; S.demo = false;
@@ -512,7 +510,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
           if (!busy) adopt(d);
         }
         remoteAt = r.data.updated_at;
-      } else if (first) { S.demo = false; S.stocks = []; S.mfs = []; S.asOf = ''; S.source = ''; if (lsGet()) S.settings.anthropic_key = lsGet(); renderAll(); }
+      } else if (first) { S.demo = false; S.stocks = []; S.mfs = []; S.asOf = ''; S.source = ''; renderAll(); }
       renderBanner();
     });
   }
@@ -909,7 +907,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     TABS.forEach(function (t) { $(VIEW[t]).hidden = t !== tab; });
     refreshDerived();
   }
-  function renderAll() { updateKeyBtn(); renderBanner(); syncControls(); renderRows('st'); renderRows('mf'); buildExtras(); applyTab(); }
+  function renderAll() { renderBanner(); syncControls(); renderRows('st'); renderRows('mf'); buildExtras(); applyTab(); }
   function refreshAll() { syncControls(); renderRows('st'); renderRows('mf'); refreshDerived(); }
 
   /* ---------- more modules: net worth, cash flow, EPF, crypto, debt, credit, insurance ---------- */
@@ -1138,18 +1136,26 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     };
   }
   var ASK_SYSTEM = 'You are the money assistant inside one person\'s personal wealth dashboard in India. The JSON below is their current dashboard data; amounts are in rupees. Use it and do not invent figures. Show the arithmetic briefly. Use Indian conventions (₹, lakh, crore). If a rate or EMI is marked as an estimate, say the answer depends on it and tell them to enter the real figure. If an important fact is missing (for example whether they pay cards in full), state your assumption or ask one short question. Be concise: short paragraphs or a few bullets, no headings. You are not a licensed adviser: give the numbers and the trade-offs, not guarantees, and mention prepayment charges, tax or lock-ins when they matter. If sample_data is true, say the numbers are sample data. Never ask for PAN, account numbers or passwords.\n\nDASHBOARD DATA:\n';
+
+  /* Claude runs on the server: a Supabase Edge Function holds the API key and checks your sign-in */
+  function claudeFetch(body) {
+    var c = window.WEALTH_CONFIG || {};
+    return SB.auth.getSession().then(function (r) {
+      var tok = r.data && r.data.session ? r.data.session.access_token : '';
+      return fetch(c.supabaseUrl + '/functions/v1/wealth-claude', { method: 'POST', headers: { 'content-type': 'application/json', apikey: c.supabaseAnonKey, authorization: 'Bearer ' + tok }, body: body });
+    });
+  }
   function claudeAsk() {
-    var key = S.settings.anthropic_key; if (!key) return Promise.reject({ message: 'Add your Claude API key first.' });
+    if (!USER || !SB) return Promise.reject({ message: 'Sign in first.' });
     var msgs = []; CHAT.forEach(function (m) { if (m.role !== 'user' && m.role !== 'assistant') return; var l = msgs[msgs.length - 1]; if (l && l.role === m.role) l.content += '\n\n' + m.content; else msgs.push({ role: m.role, content: m.content }); });
     msgs = msgs.slice(-12); while (msgs.length && msgs[0].role !== 'user') msgs.shift();
-    return fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 1200, system: ASK_SYSTEM + JSON.stringify(finContext()), messages: msgs }) })
+    return claudeFetch(JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 1200, system: ASK_SYSTEM + JSON.stringify(finContext()), messages: msgs }))
       .catch(function () { throw { message: 'Could not reach Claude. Check your internet connection.' }; })
       .then(function (res) { return res.json().catch(function () { return {}; }).then(function (j) {
         if (!res.ok) {
           var m = (j && j.error && j.error.message) || '';
           if (/credit balance/i.test(m)) throw { message: 'Your Claude API credit has run out. Top up at console.anthropic.com under Settings, Billing, in the same account the key was made in.' };
-          throw { message: res.status === 401 ? 'Claude rejected the API key. Remove it and add it again.' : res.status === 429 ? 'Claude is rate-limiting this key. Wait a minute and try again.' : res.status === 529 ? 'Claude is busy right now. Try again in a minute.' : (m || 'Claude error ' + res.status) };
+          throw { message: res.status === 404 ? 'The Claude function is not set up in Supabase yet. Deploy the wealth-claude function.' : res.status === 401 ? 'Your sign-in expired. Sign out and sign in again.' : res.status === 429 ? 'Claude is rate-limiting this key. Wait a minute and try again.' : res.status === 529 ? 'Claude is busy right now. Try again in a minute.' : (m || 'Claude error ' + res.status) };
         }
         var t = (j.content || []).filter(function (b) { return b.type === 'text'; }).map(function (b) { return b.text; }).join('');
         return (t || 'No answer came back.') + (j.stop_reason === 'max_tokens' ? '\n\n(The answer was cut off. Ask me to continue.)' : '');
@@ -1185,18 +1191,8 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     claudeAsk().then(function (t) { CHAT.push({ role: 'assistant', content: t }); }).catch(function (e) { CHAT.push({ role: 'error', content: (e && e.message) || 'Something went wrong.' }); })
       .then(function () { CHAT_BUSY = false; renderChat(); });
   }
-  function connectCard(title, sub) {
-    var inp = el('input', { class: 'in akey', type: 'password', autocomplete: 'off', placeholder: 'sk-ant-…', 'aria-label': 'Claude API key' }), msg = el('p', { class: 'note warn akey-msg', hidden: true });
-    return el('div', { class: 'card' }, el('header', null, el('div', null, el('h2', { text: title }), el('p', { class: 'sub', text: (sub || 'To ask questions, connect your own Anthropic API key.') + ' Create one at console.anthropic.com under API keys. Each question costs a few cents.' }))),
-      el('div', { class: 'fgrid' }, el('label', { class: 'fld' }, el('span', { text: 'Claude API key' }), inp)), msg,
-      el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Save key', onclick: function () {
-        var k = inp.value.trim(); if (!/^sk-ant-/.test(k)) { msg.textContent = 'That does not look like an Anthropic key. It starts with sk-ant-.'; msg.hidden = false; return; }
-        S.settings.anthropic_key = k; lsSet(k); if (S.demo) S.settings.anthropic_key = k; touch(); markDirty(true); renderAll(); } })));
-  }
   function askPanel(title, sub, ideas) {
-    var key = S.settings.anthropic_key, head = el('header', null, el('div', null, el('h2', { text: title }), el('p', { class: 'sub', text: sub })));
-    if (!key) return el('div', { class: 'card' }, head, el('p', { class: 'note', text: 'To ask questions, add your Claude API key once with the Claude key button at the top of the page.' }),
-      el('div', { class: 'addrow solo' }, el('button', { class: 'btn tint', type: 'button', text: 'Add Claude key', onclick: function () { openKeyPanel(); } })));
+    var head = el('header', null, el('div', null, el('h2', { text: title }), el('p', { class: 'sub', text: sub })));
     var ta = el('textarea', { class: 'in chat-in', rows: '2', placeholder: 'Ask about your money…', 'aria-label': 'Your question' });
     function go() { var q = ta.value; if (!q.trim() || CHAT_BUSY) return; ta.value = ''; sendChat(q); }
     ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && window.matchMedia('(hover: hover)').matches) { e.preventDefault(); go(); } });
@@ -1204,7 +1200,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
       el('div', { class: 'chips' }, ideas.map(function (q) { return el('button', { class: 'btn tint sm', type: 'button', text: q, onclick: function () { sendChat(q); } }); })),
       el('div', { class: 'chat-log', role: 'log', 'aria-live': 'polite', hidden: true }),
       el('div', { class: 'chat-bar' }, ta, el('button', { class: 'btn chat-send', type: 'button', text: 'Send', onclick: go })),
-      el('p', { class: 'note ask-foot' }, 'Key saved (…' + key.slice(-4) + '). ', el('button', { class: 'linkbtn', type: 'button', text: 'Clear chat', onclick: function () { CHAT = []; renderChat(); } })));
+      el('p', { class: 'note ask-foot' }, el('button', { class: 'linkbtn', type: 'button', text: 'Clear chat', onclick: function () { CHAT = []; renderChat(); } })));
   }
   function buildAsk() {
     var d = $('#db-ask');
@@ -1217,16 +1213,15 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
   var INS_SYSTEM = 'You read one insurance policy document (India) and return its details as JSON only, with no other text. Use null for anything the document does not state, and never guess. Money is a plain number in rupees. Dates are YYYY-MM-DD. annual_premium is the total yearly premium: if it is paid monthly, quarterly or half-yearly, multiply up to a year. Keep every string short and plain. Do not include names, addresses, dates of birth or nominee names. The text may combine several documents marked === DOCUMENT: name ===, such as a policy certificate and the terms and conditions: use them together. Keys: insurer; product_name; policy_type (one of "Term life","Health","Motor","Home","Travel","Endowment / ULIP","Other"); policy_number_last4; insured (who is covered, by relationship and count only); sum_insured; annual_premium; premium_mode; policy_start; policy_end; next_due_date; policy_term_years; premium_paying_term_years; grace_period_days; free_look_days; waiting_periods [{what, period}]; covered [strings]; not_covered [strings]; riders [{name, benefit}]; limits [{item, limit}] (sub-limits, room rent, caps); co_pay; deductible; claim_process; cashless; maturity_or_surrender; tax_benefit; key_conditions [strings]; watch_out [strings: terms a buyer commonly misses or that could reduce a claim]; summary (3 to 5 sentences in plain English).';
   var POL_SYSTEM = 'You answer questions about one insurance policy for its holder in India. Answer only from the policy document text below. The text has [Page n] markers: cite the page or section when you can. If the document does not say, say so plainly and suggest asking the insurer; never guess. Explain jargon simply. Be concise: short paragraphs or a few bullets, no headings. This is not legal advice, and claim decisions are the insurer\'s. Use ₹ and Indian number style. Never ask for personal identifiers.';
   function claudeRaw(system, messages, maxTokens) {
-    var key = S.settings.anthropic_key; if (!key) return Promise.reject({ message: 'Add your Claude API key first.' });
-    return fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: maxTokens || 1500, system: system, messages: messages }) })
+    if (!USER || !SB) return Promise.reject({ message: 'Sign in first.' });
+    return claudeFetch(JSON.stringify({ model: CLAUDE_MODEL, max_tokens: maxTokens || 1500, system: system, messages: messages }))
       .catch(function () { throw { message: 'Could not reach Claude. Check your internet connection.' }; })
       .then(function (res) { return res.json().catch(function () { return {}; }).then(function (j) {
         if (!res.ok) {
           var m = (j && j.error && j.error.message) || '';
           if (/credit balance/i.test(m)) throw { message: 'Your Claude API credit has run out. Top up at console.anthropic.com under Settings, Billing.' };
           if (/too long|prompt is too|maximum.*tokens/i.test(m)) throw { message: 'This document is too long for Claude to read in one go.' };
-          throw { message: res.status === 401 ? 'Claude rejected the API key. Remove it and add it again.' : res.status === 429 ? 'Claude is rate-limiting this key. Wait a minute and try again.' : res.status === 529 ? 'Claude is busy right now. Try again in a minute.' : (m || 'Claude error ' + res.status) };
+          throw { message: res.status === 404 ? 'The Claude function is not set up in Supabase yet. Deploy the wealth-claude function.' : res.status === 401 ? 'Your sign-in expired. Sign out and sign in again.' : res.status === 429 ? 'Claude is rate-limiting this key. Wait a minute and try again.' : res.status === 529 ? 'Claude is busy right now. Try again in a minute.' : (m || 'Claude error ' + res.status) };
         }
         return { text: (j.content || []).filter(function (b) { return b.type === 'text'; }).map(function (b) { return b.text; }).join(''), cut: j.stop_reason === 'max_tokens' };
       }); });
@@ -1289,37 +1284,12 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     }).catch(function (e) { say((e && e.message) || 'Could not read this PDF.', true); });
   }
   var INS_PENDING = null;
-  /* ---------- Claude key (one place) ---------- */
-  function openKeyPanel() {
-    var box = $('#keyPanel'); if (!box) return;
-    if (!box.hidden) { box.hidden = true; return; }
-    var key = S.settings.anthropic_key, msg = el('p', { class: 'note warn', hidden: true }), kids;
-    if (key) {
-      kids = [el('p', { class: 'note', text: 'Claude key saved (…' + key.slice(-4) + '). It is kept in your private database and on this device.' }),
-        el('div', { class: 'addrow solo' }, el('button', { class: 'btn tint', type: 'button', text: 'Remove key', onclick: function () { S.settings.anthropic_key = ''; lsSet(''); touch(); box.hidden = true; renderAll(); updateKeyBtn(); } }), el('button', { class: 'btn', type: 'button', text: 'Close', onclick: function () { box.hidden = true; } }))];
-    } else {
-      var inp = el('input', { class: 'in akey', type: 'password', autocomplete: 'off', placeholder: 'sk-ant-…', 'aria-label': 'Claude API key' });
-      kids = [el('div', { class: 'fgrid' }, el('label', { class: 'fld' }, el('span', { text: 'Your Claude API key (needed once)' }), inp)), msg,
-        el('p', { class: 'note', text: 'Create one at console.anthropic.com under API keys. It is sent only to Anthropic.' }),
-        el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Save key', onclick: function () {
-          var k = inp.value.trim(); if (!/^sk-ant-/.test(k)) { msg.textContent = 'That does not look like an Anthropic key. It starts with sk-ant-.'; msg.hidden = false; return; }
-          S.settings.anthropic_key = k; lsSet(k); touch(); markDirty(true); box.hidden = true; var pend = INS_PENDING; INS_PENDING = null; renderAll(); updateKeyBtn();
-          if (pend) setTimeout(function () { ingestPolicy(pend, null, 'new', $('#ins-status')); }, 50);
-        } }), el('button', { class: 'btn tint', type: 'button', text: 'Cancel', onclick: function () { box.hidden = true; } }))];
-    }
-    box.replaceChildren(el('div', { class: 'card' }, el('header', null, el('div', null, el('h2', { text: 'Claude key' }), el('p', { class: 'sub', text: 'Used for the debt chat and for reading insurance policies.' }))), el('div', { class: 'pad' }, kids)));
-    box.hidden = false;
-  }
-  function updateKeyBtn() { var b = $('#keyBtn'); if (b) b.textContent = S.settings.anthropic_key ? 'Claude key ✓' : 'Claude key'; }
-  document.addEventListener('click', function (e) { if (e.target && e.target.id === 'keyBtn') openKeyPanel(); });
   function insUploadCard() {
-    var inp = el('input', { type: 'file', accept: 'application/pdf,.pdf', multiple: true, style: 'display:none', id: 'ins-file' }), status = el('div', { id: 'ins-status' }), hasKey = !!S.settings.anthropic_key, parts = [];
+    var inp = el('input', { type: 'file', accept: 'application/pdf,.pdf', multiple: true, style: 'display:none', id: 'ins-file' }), status = el('div', { id: 'ins-status' }), parts = [];
     inp.addEventListener('change', function () {
       var fs = inp.files ? Array.prototype.slice.call(inp.files) : []; inp.value = ''; if (!fs.length) return;
-      if (!S.settings.anthropic_key) { INS_PENDING = fs; status.replaceChildren(el('p', { class: 'note warn', text: 'Add your Claude key with the Claude key button at the top. Reading ' + (fs.length > 1 ? 'these documents' : fs[0].name) + ' then starts on its own.' })); return; }
       var t = INS_TARGET; INS_TARGET = null; ingestPolicy(fs, t, 'new', status);
     });
-    if (!hasKey) parts.push(el('p', { class: 'note', text: 'Add your Claude key once with the Claude key button at the top of the page. After that, documents are read automatically.' }));
     return el('div', { class: 'card' }, el('header', null, el('div', null, el('h2', { text: 'Add a policy from its documents' }), el('p', { class: 'sub', text: 'Upload the policy PDF, or select several files together, such as a certificate and the terms and conditions. It is read on this device, then Claude reads it with your own API key (a few cents per policy) and fills in the details by itself. The text is kept in your private database so you can ask questions later.' }))),
       parts, el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Upload policy document', onclick: function () { INS_TARGET = null; inp.click(); } }), inp), el('div', { class: 'pad' }, status), null);
   }
