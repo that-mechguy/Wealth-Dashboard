@@ -746,6 +746,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
           sub.replaceChildren();
           if (x.cost > 0) { var g = (x.value || 0) - x.cost; sub.append('Invested ' + compact(x.cost) + ' · ', el('span', { class: g >= 0 ? 'up' : 'down', text: (g >= 0 ? '▲ ' : '▼ ') + pct(g / x.cost * 100) })); }
           if (x.xirr != null) sub.append(' · XIRR ' + x.xirr.toFixed(1) + '%');
+          if (!(x.sip > 0) || !(x.years > 0)) sub.append(' ', el('span', { class: 'chip', text: x.sip > 0 ? 'SIP years is 0, so the SIP never runs' : 'No SIP set, so step-up does nothing' }));
         }
       });
       var tr = $('#' + key + '-total');
