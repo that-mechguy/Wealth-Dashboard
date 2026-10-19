@@ -476,6 +476,9 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     SB.from('wealth_portfolio').upsert({ user_id: USER.id, data: payload(), updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).then(function (r) { if (r.error) throw r.error; remoteAt = new Date().toISOString(); setSaveState(dirty ? 'Saving…' : 'Saved'); }).catch(function () { setSaveState('Not saved'); })
       .then(function () { saving = false; if (dirty) flush(); });
   }
+  var KEYLS = 'wealth_claude_key';
+  function lsGet() { try { return localStorage.getItem(KEYLS) || ''; } catch (e) { return ''; } }
+  function lsSet(v) { try { if (v) localStorage.setItem(KEYLS, v); else localStorage.removeItem(KEYLS); } catch (e) {} }
   function adopt(d) {
     S.stocks = Array.isArray(d.stocks) ? d.stocks : [];
     S.mfs = Array.isArray(d.mfs) ? d.mfs : [];
@@ -483,6 +486,8 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     S.crypto = Array.isArray(d.crypto) ? d.crypto : []; S.debts = Array.isArray(d.debts) ? d.debts : []; S.ins = Array.isArray(d.ins) ? d.ins : [];
     S.cibil = Object.assign({ score: 0, date: '', util: 0, enq: 0, missed: 0, history: [] }, d.cibil || {}); if (!Array.isArray(S.cibil.history)) S.cibil.history = [];
     S.profile = Object.assign({ income: 0, expense: 0, extra: 0 }, d.profile || {}); S.settings = d.settings && typeof d.settings === 'object' ? d.settings : {};
+    if (!S.settings.anthropic_key && lsGet()) { S.settings.anthropic_key = lsGet(); setTimeout(function () { markDirty(true); }, 300); }
+    else if (S.settings.anthropic_key) lsSet(S.settings.anthropic_key);
     S.horizon = HORIZONS.indexOf(d.horizon) >= 0 ? d.horizon : 10;
     S.scenario = SCEN[d.scenario] != null ? d.scenario : 'base';
     S.asOf = d.asOf || ''; S.source = d.source || ''; S.demo = false;
@@ -505,7 +510,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
           if (!busy) adopt(d);
         }
         remoteAt = r.data.updated_at;
-      } else if (first) { S.demo = false; S.stocks = []; S.mfs = []; S.asOf = ''; S.source = ''; renderAll(); }
+      } else if (first) { S.demo = false; S.stocks = []; S.mfs = []; S.asOf = ''; S.source = ''; if (lsGet()) S.settings.anthropic_key = lsGet(); renderAll(); }
       renderBanner();
     });
   }
@@ -1184,7 +1189,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
       el('div', { class: 'fgrid' }, el('label', { class: 'fld' }, el('span', { text: 'Claude API key' }), inp)), msg,
       el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Save key', onclick: function () {
         var k = inp.value.trim(); if (!/^sk-ant-/.test(k)) { msg.textContent = 'That does not look like an Anthropic key. It starts with sk-ant-.'; msg.hidden = false; return; }
-        S.settings.anthropic_key = k; touch(); renderAll(); } })));
+        S.settings.anthropic_key = k; lsSet(k); if (S.demo) S.settings.anthropic_key = k; touch(); markDirty(true); renderAll(); } })));
   }
   function askPanel(title, sub, ideas) {
     var key = S.settings.anthropic_key, head = el('header', null, el('div', null, el('h2', { text: title }), el('p', { class: 'sub', text: sub })));
@@ -1196,7 +1201,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
       el('div', { class: 'chips' }, ideas.map(function (q) { return el('button', { class: 'btn tint sm', type: 'button', text: q, onclick: function () { sendChat(q); } }); })),
       el('div', { class: 'chat-log', role: 'log', 'aria-live': 'polite', hidden: true }),
       el('div', { class: 'chat-bar' }, ta, el('button', { class: 'btn chat-send', type: 'button', text: 'Send', onclick: go })),
-      el('p', { class: 'note ask-foot' }, 'Key saved (…' + key.slice(-4) + '). ', el('button', { class: 'linkbtn', type: 'button', text: 'Remove key', onclick: function () { S.settings.anthropic_key = ''; touch(); buildAsk(); } }), ' ', el('button', { class: 'linkbtn', type: 'button', text: 'Clear chat', onclick: function () { CHAT = []; renderChat(); } })));
+      el('p', { class: 'note ask-foot' }, 'Key saved (…' + key.slice(-4) + '). ', el('button', { class: 'linkbtn', type: 'button', text: 'Remove key', onclick: function () { S.settings.anthropic_key = ''; lsSet(''); touch(); buildAsk(); } }), ' ', el('button', { class: 'linkbtn', type: 'button', text: 'Clear chat', onclick: function () { CHAT = []; renderChat(); } })));
   }
   function buildAsk() {
     var d = $('#db-ask');
@@ -1293,7 +1298,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
       parts.push(el('div', { class: 'fgrid' }, el('label', { class: 'fld' }, el('span', { text: 'Your Claude API key (needed once)' }), kin)), kmsg,
         el('div', { class: 'addrow solo' }, el('button', { class: 'btn tint', type: 'button', text: 'Save key', onclick: function () {
           var k = kin.value.trim(); if (!/^sk-ant-/.test(k)) { kmsg.textContent = 'That does not look like an Anthropic key. It starts with sk-ant-.'; kmsg.hidden = false; return; }
-          S.settings.anthropic_key = k; touch(); var pend = INS_PENDING; INS_PENDING = null; renderAll();
+          S.settings.anthropic_key = k; lsSet(k); if (S.demo) S.settings.anthropic_key = k; touch(); markDirty(true); var pend = INS_PENDING; INS_PENDING = null; renderAll();
           if (pend) setTimeout(function () { ingestPolicy(pend, null, 'new', $('#ins-status')); }, 50);
         } })));
     }
