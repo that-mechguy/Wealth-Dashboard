@@ -905,8 +905,11 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     var hash = (location.hash || '').replace('#', ''), tab = TABS.indexOf(hash) >= 0 ? hash : 'overview';
     document.querySelectorAll('[role="tab"]').forEach(function (t) { var on = t.getAttribute('data-tab') === tab; t.setAttribute('aria-selected', String(on)); if (on) { try { t.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (e) {} } });
     TABS.forEach(function (t) { $(VIEW[t]).hidden = t !== tab; });
+    if (LAST_TAB && LAST_TAB !== tab) { CHAT = []; POLCHAT = {}; INS_SEL = null; try { renderChat(); renderInsDetail(); } catch (e) {} }
+    LAST_TAB = tab;
     refreshDerived();
   }
+  var LAST_TAB = '';
   function renderAll() { renderBanner(); syncControls(); renderRows('st'); renderRows('mf'); buildExtras(); applyTab(); }
   function refreshAll() { syncControls(); renderRows('st'); renderRows('mf'); refreshDerived(); }
 
@@ -1316,7 +1319,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
         x.doc && x.doc.saved === false ? el('p', { class: 'note warn', text: 'The document text was not saved, so questions only work until you leave this page. Run the new SQL in Supabase.' }) : null,
         el('div', { class: 'actions' }, x.doc ? el('button', { class: 'btn tint', type: 'button', text: 'Add another document', onclick: function () { file2.click(); } }) : null, file2, el('button', { class: 'btn tint', type: 'button', text: x.doc ? 'Replace documents' : 'Upload document', onclick: function () { file.click(); } }), file,
           x.doc ? el('button', { class: 'btn tint', type: 'button', text: 'Remove document text', onclick: function () { dropDoc(x.doc.id); x.doc = null; touch(); renderInsDetail(); toast('Document text removed. The details above stay.'); } }) : null,
-          el('button', { class: 'btn tint', type: 'button', text: 'Close', onclick: function () { INS_SEL = null; renderInsDetail(); } })), st),
+          el('button', { class: 'btn tint', type: 'button', text: 'Close', onclick: function () { INS_SEL = null; POLCHAT = {}; renderInsDetail(); } })), st),
       x.doc ? polChatBlock(x) : el('div', { class: 'pad' }, el('p', { class: 'note', text: 'Upload the policy document to ask questions about it.' }))));
   }
   var POL_IDEAS = ['What is not covered?', 'How do I make a claim?', 'What happens if I miss a premium?', 'Explain the waiting periods', 'What should I check before renewing?'];
