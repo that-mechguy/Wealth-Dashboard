@@ -294,11 +294,13 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     </div>
     <div class="actions">
       <span class="save" id="saveState" aria-live="polite"></span>
+      <button class="btn" id="keyBtn" type="button">Claude key</button>
       <button class="btn" id="outBtn" type="button" hidden>Sign out</button>
       <button class="btn" id="importBtn" type="button">Import Groww files</button>
       <input id="fileIn" type="file" multiple accept=".csv,.xlsx,.xls" hidden>
     </div>
   </header>
+  <div id="keyPanel" hidden></div>
 
   <div class="tabsbar">
     <div class="seg wide" role="tablist" aria-label="Sections">
@@ -907,7 +909,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     TABS.forEach(function (t) { $(VIEW[t]).hidden = t !== tab; });
     refreshDerived();
   }
-  function renderAll() { renderBanner(); syncControls(); renderRows('st'); renderRows('mf'); buildExtras(); applyTab(); }
+  function renderAll() { updateKeyBtn(); renderBanner(); syncControls(); renderRows('st'); renderRows('mf'); buildExtras(); applyTab(); }
   function refreshAll() { syncControls(); renderRows('st'); renderRows('mf'); refreshDerived(); }
 
   /* ---------- more modules: net worth, cash flow, EPF, crypto, debt, credit, insurance ---------- */
@@ -1193,8 +1195,8 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
   }
   function askPanel(title, sub, ideas) {
     var key = S.settings.anthropic_key, head = el('header', null, el('div', null, el('h2', { text: title }), el('p', { class: 'sub', text: sub })));
-    if (!key) return el('div', { class: 'card' }, head, el('p', { class: 'note', text: 'To ask questions, add your Claude API key once in the Insurance tab. It is shared with this chat.' }),
-      el('div', { class: 'addrow solo' }, el('button', { class: 'btn tint', type: 'button', text: 'Go to Insurance', onclick: function () { var t = document.getElementById('tab-insurance'); if (t) t.click(); } })));
+    if (!key) return el('div', { class: 'card' }, head, el('p', { class: 'note', text: 'To ask questions, add your Claude API key once with the Claude key button at the top of the page.' }),
+      el('div', { class: 'addrow solo' }, el('button', { class: 'btn tint', type: 'button', text: 'Add Claude key', onclick: function () { openKeyPanel(); } })));
     var ta = el('textarea', { class: 'in chat-in', rows: '2', placeholder: 'Ask about your money…', 'aria-label': 'Your question' });
     function go() { var q = ta.value; if (!q.trim() || CHAT_BUSY) return; ta.value = ''; sendChat(q); }
     ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && window.matchMedia('(hover: hover)').matches) { e.preventDefault(); go(); } });
@@ -1287,24 +1289,39 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     }).catch(function (e) { say((e && e.message) || 'Could not read this PDF.', true); });
   }
   var INS_PENDING = null;
+  /* ---------- Claude key (one place) ---------- */
+  function openKeyPanel() {
+    var box = $('#keyPanel'); if (!box) return;
+    if (!box.hidden) { box.hidden = true; return; }
+    var key = S.settings.anthropic_key, msg = el('p', { class: 'note warn', hidden: true }), kids;
+    if (key) {
+      kids = [el('p', { class: 'note', text: 'Claude key saved (…' + key.slice(-4) + '). It is kept in your private database and on this device.' }),
+        el('div', { class: 'addrow solo' }, el('button', { class: 'btn tint', type: 'button', text: 'Remove key', onclick: function () { S.settings.anthropic_key = ''; lsSet(''); touch(); box.hidden = true; renderAll(); updateKeyBtn(); } }), el('button', { class: 'btn', type: 'button', text: 'Close', onclick: function () { box.hidden = true; } }))];
+    } else {
+      var inp = el('input', { class: 'in akey', type: 'password', autocomplete: 'off', placeholder: 'sk-ant-…', 'aria-label': 'Claude API key' });
+      kids = [el('div', { class: 'fgrid' }, el('label', { class: 'fld' }, el('span', { text: 'Your Claude API key (needed once)' }), inp)), msg,
+        el('p', { class: 'note', text: 'Create one at console.anthropic.com under API keys. It is sent only to Anthropic.' }),
+        el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Save key', onclick: function () {
+          var k = inp.value.trim(); if (!/^sk-ant-/.test(k)) { msg.textContent = 'That does not look like an Anthropic key. It starts with sk-ant-.'; msg.hidden = false; return; }
+          S.settings.anthropic_key = k; lsSet(k); touch(); markDirty(true); box.hidden = true; var pend = INS_PENDING; INS_PENDING = null; renderAll(); updateKeyBtn();
+          if (pend) setTimeout(function () { ingestPolicy(pend, null, 'new', $('#ins-status')); }, 50);
+        } }), el('button', { class: 'btn tint', type: 'button', text: 'Cancel', onclick: function () { box.hidden = true; } }))];
+    }
+    box.replaceChildren(el('div', { class: 'card' }, el('header', null, el('div', null, el('h2', { text: 'Claude key' }), el('p', { class: 'sub', text: 'Used for the debt chat and for reading insurance policies.' }))), el('div', { class: 'pad' }, kids)));
+    box.hidden = false;
+  }
+  function updateKeyBtn() { var b = $('#keyBtn'); if (b) b.textContent = S.settings.anthropic_key ? 'Claude key ✓' : 'Claude key'; }
+  document.addEventListener('click', function (e) { if (e.target && e.target.id === 'keyBtn') openKeyPanel(); });
   function insUploadCard() {
     var inp = el('input', { type: 'file', accept: 'application/pdf,.pdf', multiple: true, style: 'display:none', id: 'ins-file' }), status = el('div', { id: 'ins-status' }), hasKey = !!S.settings.anthropic_key, parts = [];
     inp.addEventListener('change', function () {
       var fs = inp.files ? Array.prototype.slice.call(inp.files) : []; inp.value = ''; if (!fs.length) return;
-      if (!S.settings.anthropic_key) { INS_PENDING = fs; status.replaceChildren(el('p', { class: 'note warn', text: 'Paste your Claude API key above and tap Save key. Reading ' + (fs.length > 1 ? 'these documents' : fs[0].name) + ' then starts on its own.' })); return; }
+      if (!S.settings.anthropic_key) { INS_PENDING = fs; status.replaceChildren(el('p', { class: 'note warn', text: 'Add your Claude key with the Claude key button at the top. Reading ' + (fs.length > 1 ? 'these documents' : fs[0].name) + ' then starts on its own.' })); return; }
       var t = INS_TARGET; INS_TARGET = null; ingestPolicy(fs, t, 'new', status);
     });
-    if (!hasKey) {
-      var kin = el('input', { class: 'in akey', type: 'password', autocomplete: 'off', placeholder: 'sk-ant-…', 'aria-label': 'Claude API key' }), kmsg = el('p', { class: 'note warn', hidden: true });
-      parts.push(el('div', { class: 'fgrid' }, el('label', { class: 'fld' }, el('span', { text: 'Your Claude API key (needed once)' }), kin)), kmsg,
-        el('div', { class: 'addrow solo' }, el('button', { class: 'btn tint', type: 'button', text: 'Save key', onclick: function () {
-          var k = kin.value.trim(); if (!/^sk-ant-/.test(k)) { kmsg.textContent = 'That does not look like an Anthropic key. It starts with sk-ant-.'; kmsg.hidden = false; return; }
-          S.settings.anthropic_key = k; lsSet(k); if (S.demo) S.settings.anthropic_key = k; touch(); markDirty(true); var pend = INS_PENDING; INS_PENDING = null; renderAll();
-          if (pend) setTimeout(function () { ingestPolicy(pend, null, 'new', $('#ins-status')); }, 50);
-        } })));
-    }
+    if (!hasKey) parts.push(el('p', { class: 'note', text: 'Add your Claude key once with the Claude key button at the top of the page. After that, documents are read automatically.' }));
     return el('div', { class: 'card' }, el('header', null, el('div', null, el('h2', { text: 'Add a policy from its documents' }), el('p', { class: 'sub', text: 'Upload the policy PDF, or select several files together, such as a certificate and the terms and conditions. It is read on this device, then Claude reads it with your own API key (a few cents per policy) and fills in the details by itself. The text is kept in your private database so you can ask questions later.' }))),
-      parts, el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Upload policy document', onclick: function () { INS_TARGET = null; inp.click(); } }), inp), el('div', { class: 'pad' }, status), hasKey ? el('p', { class: 'note ask-foot' }, 'Claude key saved (…' + S.settings.anthropic_key.slice(-4) + '). ', el('button', { class: 'linkbtn', type: 'button', text: 'Remove key', onclick: function () { S.settings.anthropic_key = ''; lsSet(''); touch(); renderAll(); } })) : null);
+      parts, el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Upload policy document', onclick: function () { INS_TARGET = null; inp.click(); } }), inp), el('div', { class: 'pad' }, status), null);
   }
   function kvRow(k, v) { return (v == null || v === '' || (Array.isArray(v) && !v.length)) ? null : el('div', { class: 'kv' }, el('span', { class: 'kk', text: k }), el('span', { class: 'kvv', text: v })); }
   function listBlock(title, arr, fmt) { arr = (arr || []).filter(Boolean); if (!arr.length) return null; return el('div', { class: 'blk' }, el('h3', { text: title }), el('ul', null, arr.map(function (x) { return el('li', { text: fmt ? fmt(x) : String(x) }); }))); }
