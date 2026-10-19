@@ -158,6 +158,14 @@ h1 { margin: 0; font-size: 34px; line-height: 1.1; font-weight: 700; letter-spac
 .in.nm:focus { background: var(--fill); padding-inline: 8px; border-radius: 6px; }
 .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 2px; font-size: 12px; color: var(--ink2); }
 .meta select { border: 0; background: var(--fill); border-radius: 6px; padding: 1px 4px; font-size: 12px; color: var(--ink2); }
+.flags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.plist { margin: 6px 0 10px; padding-left: 18px; font-size: 14px; line-height: 1.6; }
+.ph { margin: 0; font-size: 15px; padding: 0 16px; }
+#cibc-prev, #cibd-prev { padding: 0 16px 14px; }
+#cibc-prev:not(:empty), #cibd-prev:not(:empty) { padding-top: 6px; }
+#cibc-prev .ph, #cibd-prev .ph { padding: 0; }
+.chk { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; margin: 6px 0; }
+.note.warn { color: var(--bad, #d70015); }
 .chip { border-radius: 6px; padding: 1px 6px; font-size: 11px; font-weight: 600; background: var(--warn-bg); color: var(--warn); }
 .up { color: var(--gain); font-weight: 600; } .down { color: var(--loss); font-weight: 600; }
 .proj { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -1045,8 +1053,8 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     } else {
       inp = el('input', { class: 'in', type: 'text', inputmode: 'decimal', value: fmtField(f.type, obj[k]), 'aria-label': f.label, autocomplete: 'off' });
       inp.addEventListener('focus', function () { inp.select(); });
-      inp.addEventListener('input', function () { obj[k] = num(inp.value); touch(); updateExtras(); });
-      inp.addEventListener('change', function () { var v = num(inp.value); if (f.min != null) v = Math.max(f.min, v); if (f.max != null) v = Math.min(f.max, v); if (f.type === 'int') v = Math.round(v); obj[k] = v; inp.value = fmtField(f.type, v); touch(); updateExtras(); });
+      inp.addEventListener('input', function () { obj[k] = num(inp.value); if (obj.est && (k === 'rate' || k === 'emi')) obj.est = obj.est.filter(function (x) { return x !== k; }); touch(); updateExtras(); });
+      inp.addEventListener('change', function () { var v = num(inp.value); if (f.min != null) v = Math.max(f.min, v); if (f.max != null) v = Math.min(f.max, v); if (f.type === 'int') v = Math.round(v); obj[k] = v; if (obj.est && (k === 'rate' || k === 'emi')) obj.est = obj.est.filter(function (x) { return x !== k; }); inp.value = fmtField(f.type, v); touch(); updateExtras(); });
     }
     return inp;
   }
@@ -1081,7 +1089,161 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
   function note(text, cls) { return el('p', { class: 'note ' + (cls || ''), text: text }); }
 
   /* builders (structure; run when data is loaded or replaced) */
-  var DEBT_TYPES = ['Home loan', 'Car loan', 'Personal loan', 'Credit card', 'Education loan', 'Gold loan', 'Other'];
+  var DEBT_TYPES = ['Home loan', 'Car loan', 'Personal loan', 'Credit card', 'Education loan', 'Gold loan', 'Consumer loan', 'Two-wheeler loan', 'Other'];
+  /* ---- CIBIL upload ---- */
+  var PDFJS_V = '3.11.174', PDFJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/' + PDFJS_V + '/';
+  var cibilPending = null;
+  function loadPdfJs() {
+    if (window.pdfjsLib) { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + 'pdf.worker.min.js'; return Promise.resolve(window.pdfjsLib); }
+    return new Promise(function (res, rej) {
+      var s = document.createElement('script'); s.src = PDFJS_BASE + 'pdf.min.js';
+      s.onload = function () { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + 'pdf.worker.min.js'; res(window.pdfjsLib); };
+      s.onerror = function () { rej(new Error('Could not load the PDF reader. Check your connection and try again.')); };
+      document.head.append(s);
+    });
+  }
+// Rebuild physical lines from pdf.js text items; wide gaps become 2+ spaces (like pdftotext -layout)
+  function buildLines(items){
+    var rows={};
+    items.forEach(function(i){ if(!i.str||!i.str.trim()&&i.str==='') return; var y=Math.round(i.transform[5]/3); (rows[y]=rows[y]||[]).push(i); });
+    return Object.keys(rows).map(Number).sort(function(a,b){return b-a;}).map(function(y){
+      var r=rows[y].sort(function(a,b){return a.transform[4]-b.transform[4];}), s='', end=null;
+      r.forEach(function(i){ var x=i.transform[4]; if(end!==null){ var gap=x-end; if(gap>6) s=s.replace(/ +$/,'')+'  '; } s+=i.str; end=x+i.width; });
+      return s.replace(/\s+$/,'');
+    }).filter(function(l){return l.trim();});
+  }
+  
+// CIBIL report reader. Input: array of text lines (see lines.js). Output: numbers only, no identifiers.
+  function parseCibil(rawLines){
+    var NOISE=/^https?:\/\/|CIBIL Report$|^\d+\/\d+\/\d+, \d+:\d+/;
+    var L=rawLines.filter(function(l){return l.trim()&&!NOISE.test(l.trim());}).map(function(l){return l.trim();});
+    var txt=L.join('\n');
+    function money(s){ if(s==null) return null; s=String(s).replace(/[₹,\s]/g,''); if(!s||s==='-') return null; var n=parseFloat(s); return isNaN(n)?null:n; }
+    function pd(s){ var m=/^(\d\d)\/(\d\d)\/(\d{4})$/.exec((s||'').trim()); return m?new Date(Date.UTC(+m[3],+m[2]-1,+m[1])):null; }
+    function iso(d){ return d?d.toISOString().slice(0,10):''; }
+    var sm=/Your CIBIL Score is (\d{3}) as of Date\s*:\s*(\d\d\/\d\d\/\d{4})/.exec(txt);
+    if(!sm) throw new Error('This does not look like a CIBIL report: the score line was not found.');
+    var reportDate=pd(sm[2]);
+    var im=/^Income\s+₹?\s*([\d,]+)/m.exec(txt), ind=/Monthly \/ Annual Income Indicator\s+(\w+)/.exec(txt);
+    var income=im?money(im[1]):null; if(income&&ind&&/annual/i.test(ind[1])) income=Math.round(income/12);
+    var ei=txt.search(/^ENQUIRY DETAILS$/m), ai=txt.search(/^ALL ACCOUNTS$/m);
+    if(ai<0) throw new Error('Account section not found in this PDF.');
+    var body=txt.slice(ai, ei>0?ei:undefined), enq=ei>0?txt.slice(ei):'';
+    var parts=body.split(/^Member Name$/m).slice(1), accts=[];
+    parts.forEach(function(a){
+      var lines=a.split('\n').map(function(x){return x.trim();}).filter(Boolean);
+      function next(label){ for(var i=0;i<lines.length;i++) if(lines[i]===label) return lines[i+1]; }
+      function kv(label){ var m=new RegExp('^'+label.replace(/[.*+?^${}()|[\]\\\/]/g,'\\$&')+'\\s+(.+)$','m').exec(a); return m?m[1].trim():null; }
+      var type=next('Account Type'), acc=next('Account Number')||'';
+      var hist=[]; a.replace(/^([A-Z][a-z]{2} \d{4})\s+(\S+)$/gm,function(_,m,c){hist.push([m,c]);});
+      var h=0; for(var i=0;i<acc.length+lines[0].length;i++) {} 
+      var key=(lines[0]+'|'+type+'|'+acc), hash=2166136261; for(var k=0;k<key.length;k++){ hash^=key.charCodeAt(k); hash=Math.imul(hash,16777619)>>>0; }
+      accts.push({ lender:lines[0], type:type||'', ref:hash.toString(36), limit:money(kv('Credit Limit')), sanctioned:money(kv('Sanctioned Amount')),
+        balance:money(kv('Current Balance')), overdue:money(kv('Amount Overdue')), rate:(function(){var r=kv('Rate of Interest'); var n=parseFloat(r); return isNaN(n)?null:n;})(),
+        emi:money(kv('EMI Amount')), closed:!!pd(kv('Date Closed')), opened:iso(pd(kv('Date Opened / Disbursed'))), hist:hist });
+    });
+    var open=accts.filter(function(x){return !x.closed;});
+    var cards=open.filter(function(x){return /credit card/i.test(x.type);}), loans=open.filter(function(x){return !/credit card/i.test(x.type);});
+    var cl=0, cb=0; cards.forEach(function(x){ cl+=x.limit||0; cb+=Math.max(0,x.balance||0); });
+    var late=0, lateMonths=0; accts.forEach(function(x){ var any=false; x.hist.forEach(function(p){ if(/^\d+$/.test(p[1])&&+p[1]>0){ lateMonths++; any=true; } }); if(any) late++; });
+    var enqs=[]; enq.replace(/^Member Name\s+(.+)\nDate Of Enquiry\s+(\d\d\/\d\d\/\d{4})/gm,function(_,m,d){ enqs.push(pd(d)); });
+    var since=new Date(reportDate.getTime()-730*864e5), e2=enqs.filter(function(d){return d&&d>=since;}).length;
+    var overdueAmt=0; open.forEach(function(x){overdueAmt+=x.overdue||0;});
+    return { score:+sm[1], date:iso(reportDate), income:income, accounts:accts.length, openCount:open.length, closedCount:accts.length-open.length,
+      cards:cards, loans:loans, cardLimit:cl, cardBalance:cb, util:cl>0?Math.round(cb/cl*100):0, enquiries2y:e2, enquiriesAll:enqs.length,
+      missedAccounts:late, lateMonths:lateMonths, overdueTotal:overdueAmt };
+  }
+  
+  function readPdfLines(file) {
+    return loadPdfJs().then(function (lib) { return file.arrayBuffer().then(function (buf) { return lib.getDocument({ data: new Uint8Array(buf) }).promise; }); }).then(function (doc) {
+      var out = [], p = Promise.resolve();
+      for (var i = 1; i <= doc.numPages; i++) (function (n) { p = p.then(function () { return doc.getPage(n).then(function (pg) { return pg.getTextContent(); }).then(function (tc) { out = out.concat(buildLines(tc.items)); }); }); })(i);
+      return p.then(function () { return out; });
+    });
+  }
+  var SMALL = { bank: 'Bank', finance: 'Finance', financial: 'Financial', services: 'Services', limited: 'Ltd', ltd: 'Ltd', credit: 'Credit', card: 'Card', capital: 'Capital', first: 'First', fincorp: 'Fincorp', housing: 'Housing' };
+  function niceName(s) { return (s || '').replace(/\s+/g, ' ').trim().split(' ').map(function (w) { var l = w.toLowerCase(); if (SMALL[l]) return SMALL[l]; if (w.length <= 4 || /[^A-Za-z]/.test(w)) return w; return w[0] + l.slice(1); }).join(' '); }
+  function lakhs(n) { return n >= 1e5 ? '₹' + (Math.round(n / 1e4) / 10) + 'L' : '₹' + inr.format(Math.round(n)); }
+  function mapType(t) {
+    t = (t || '').toLowerCase();
+    return /credit card/.test(t) ? 'Credit card' : /home|housing/.test(t) ? 'Home loan' : /two.?wheeler/.test(t) ? 'Two-wheeler loan' : /auto|car\b/.test(t) ? 'Car loan' : /education/.test(t) ? 'Education loan' : /gold/.test(t) ? 'Gold loan' : /consumer/.test(t) ? 'Consumer loan' : /personal/.test(t) ? 'Personal loan' : 'Other';
+  }
+  function planCibil(r) {
+    var rows = r.cards.concat(r.loans).filter(function (a) { return (a.balance || 0) > 0; }), add = [], upd = [], seen = {};
+    rows.forEach(function (a) {
+      seen[a.ref] = 1; var ex = S.debts.filter(function (d) { return d.ref === a.ref; })[0];
+      if (ex) upd.push({ a: a, ex: ex }); else add.push(a);
+    });
+    var gone = S.debts.filter(function (d) { return d.ref && !seen[d.ref]; });
+    return { rows: rows, add: add, upd: upd, gone: gone, skipped: r.cards.concat(r.loans).length - rows.length };
+  }
+  function rowFromAccount(a) {
+    var card = /credit card/i.test(a.type), name = niceName(a.lender) + ' · ' + (card ? lakhs(a.limit || 0) : lakhs(a.sanctioned || a.balance || 0));
+    var d = { id: uid(), ref: a.ref, name: name, type: mapType(a.type), balance: Math.round(a.balance || 0), limit: card ? Math.round(a.limit || 0) : 0, od: Math.round(a.overdue || 0), est: [] };
+    if (a.rate != null) d.rate = a.rate; else { d.rate = card ? 36 : 14; d.est.push('rate'); }
+    if (a.emi) d.emi = Math.round(a.emi); else if (card) { d.emi = Math.max(100, Math.round(d.balance * 0.05 / 100) * 100); d.est.push('emi'); } else d.emi = 0;
+    return d;
+  }
+  function applyCibil(r, plan, useIncome) {
+    var c = S.cibil; c.score = r.score; c.date = r.date; c.enq = r.enquiries2y; c.missed = r.lateMonths;
+    c.history = (c.history || []).filter(function (h) { return h.date !== r.date; }); c.history.push({ date: r.date, score: r.score }); c.history.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+    plan.upd.forEach(function (u) { var a = u.a, d = u.ex; d.balance = Math.round(a.balance || 0); d.od = Math.round(a.overdue || 0); if (d.type === 'Credit card') d.limit = Math.round(a.limit || d.limit || 0);
+      if (a.rate != null && (d.est || []).indexOf('rate') >= 0) { d.rate = a.rate; d.est = d.est.filter(function (x) { return x !== 'rate'; }); }
+      if (a.emi && !(d.emi > 0)) d.emi = Math.round(a.emi); });
+    plan.gone.forEach(function (g) { S.debts.splice(S.debts.indexOf(g), 1); });
+    plan.add.forEach(function (a) { S.debts.push(rowFromAccount(a)); });
+    var cl = 0, cb = 0; S.debts.forEach(function (d) { if (d.type === 'Credit card' && d.limit > 0) { cl += d.limit; cb += Math.max(0, d.balance || 0); } });
+    if (cl > 0) c.util = Math.round(cb / cl * 100);
+    if (useIncome && r.income) S.profile.income = r.income;
+    touch(); renderAll(); cibilPending = null;
+  }
+  function dmy(iso) { var p = (iso || '').split('-'); return p.length === 3 ? +p[2] + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+p[1] - 1] + ' ' + p[0] : iso; }
+  function showCibilPreview(box, r) {
+    var plan = planCibil(r), inc = el('input', { type: 'checkbox', id: 'cibil-inc' });
+    box.replaceChildren(
+      el('h3', { class: 'ph', text: 'Found in your report' }),
+      el('ul', { class: 'plist' },
+        el('li', { text: 'Score ' + r.score + ' as of ' + dmy(r.date) }),
+        el('li', { text: r.cards.length + ' open credit cards: limit ' + big(r.cardLimit) + ', owed ' + big(r.cardBalance) + ' (' + r.util + '% used)' }),
+        el('li', { text: r.loans.length + ' open loans' + (r.loans.length ? ', ' + big(r.loans.reduce(function (t, a) { return t + (a.balance || 0); }, 0)) + ' outstanding' : '') }),
+        el('li', { text: r.enquiries2y + ' enquiries in the last 2 years, ' + (r.lateMonths ? r.lateMonths + ' late payment month' + (r.lateMonths > 1 ? 's' : '') : 'no late payments') + (r.overdueTotal > 0 ? ', ' + big(r.overdueTotal) + ' overdue now' : '') }),
+        el('li', { text: 'Debt tab: ' + plan.add.length + ' new' + (plan.upd.length ? ', ' + plan.upd.length + ' updated' : '') + (plan.gone.length ? ', ' + plan.gone.length + ' closed and removed' : '') + (plan.skipped ? ' (' + plan.skipped + ' with nothing owed skipped)' : '') })),
+      r.income ? el('label', { class: 'chk' }, inc, ' Also use the reported income of ' + big(r.income) + ' a month. It is gross pay, so your take-home may be lower.') : null,
+      el('p', { class: 'note', text: 'Rates are not in the report. Cards start at an estimated 36% and loans at 14%, marked on each row, so replace them with your real rates.' }),
+      el('div', { class: 'actions' },
+        el('button', { class: 'btn', type: 'button', text: 'Apply to dashboard', onclick: function () { applyCibil(r, planCibil(r), inc.checked); toast('Report applied.'); } }),
+        el('button', { class: 'btn tint', type: 'button', text: 'Cancel', onclick: function () { box.replaceChildren(); cibilPending = null; } })));
+  }
+  function cibilCard(id) {
+    var box = el('div', { id: id + '-prev' }), inp = el('input', { type: 'file', accept: 'application/pdf,.pdf', style: 'display:none', id: id + '-file' });
+    inp.addEventListener('change', function () {
+      var f = inp.files && inp.files[0]; inp.value = ''; if (!f) return;
+      if (!/\.pdf$/i.test(f.name) && f.type !== 'application/pdf') { toast('Please choose the PDF report.'); return; }
+      box.replaceChildren(el('p', { class: 'note', text: 'Reading ' + f.name + ' on this device...' }));
+      readPdfLines(f).then(function (lines) { var r = parseCibil(lines); cibilPending = r; showCibilPreview(box, r); })
+        .catch(function (e) { box.replaceChildren(el('p', { class: 'note warn', text: (e && e.message) || 'Could not read this PDF.' }), el('p', { class: 'note', text: 'Use the full CIBIL report PDF with selectable text, not a screenshot or scan, and no password.' })); });
+    });
+    return el('div', { class: 'card' }, el('header', null, el('div', null, el('h2', { text: 'Upload your CIBIL report' }), el('p', { class: 'sub', text: 'Reads the PDF on this device. The file is never uploaded, and no name, PAN, address or account number is kept.' }))),
+      el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Choose CIBIL PDF', onclick: function () { inp.click(); } }), inp), box);
+  }
+  function debtFlags(d) {
+    var f = [], e = d.est || [];
+    if (e.indexOf('rate') >= 0) f.push('Rate estimated'); if (e.indexOf('emi') >= 0) f.push('EMI estimated'); else if (!(d.emi > 0) && d.balance > 0) f.push('Add EMI');
+    if (d.od > 0) f.push(big(d.od) + ' overdue'); return f;
+  }
+  function refreshFlags() {
+    S.debts.forEach(function (d) {
+      var row = document.querySelector('#db-rows .hrow[data-id="' + d.id + '"] .c-name'); if (!row) return;
+      var old = row.querySelector('.flags'); if (old) old.remove(); var f = debtFlags(d);
+      if (f.length) row.append(el('div', { class: 'flags' }, f.map(function (t) { return el('span', { class: 'chip', text: t }); })));
+    });
+  }
+  function autoUtil() {
+    var cl = 0, cb = 0; S.debts.forEach(function (d) { if (d.type === 'Credit card' && d.limit > 0) { cl += d.limit; cb += Math.max(0, d.balance || 0); } });
+    if (!(cl > 0)) return; var u = Math.round(cb / cl * 100);
+    if (S.cibil.util !== u) { S.cibil.util = u; var ui = document.querySelector('#view-credit input[aria-label="Card utilisation %"]'); if (ui) ui.value = fmtField('pct', u); }
+  }
+
   var INS_TYPES = ['Term life', 'Health', 'Motor', 'Home', 'Travel', 'Endowment / ULIP', 'Other'];
   var CRYPTO_STAT = {};
   function buildExtras() {
@@ -1103,15 +1265,15 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
         cols: [{ k: 'value', label: 'Value today', type: 'money', min: 0 }, { k: 'dca', label: 'Monthly buy', type: 'money', min: 0 }, { k: 'ret', label: 'Return % / yr', type: 'pct', min: 0, max: 40 }],
         derived: { label: 'In ' + S.horizon + ' yrs' }, make: function () { return { id: uid(), name: 'Bitcoin', value: 0, dca: 0, ret: 20 }; } }),
       note('Returns here are your guesses and are capped at 40%. Crypto is very volatile, so many planners keep it to 5% of net worth or less. Profits are taxed at a flat 30% in India plus 1% TDS on sales.'));
-    var db = $('#view-debt'); db.replaceChildren(heroEl('db', 'Total debt'), el('div', { class: 'tiles', id: 'db-tiles' }), el('div', { class: 'card', id: 'db-tips' }),
+    var db = $('#view-debt'); db.replaceChildren(heroEl('db', 'Total debt'), el('div', { class: 'tiles', id: 'db-tiles' }), el('div', { class: 'card', id: 'db-tips' }), cibilCard('cibd'),
       listCard({ id: 'db', title: 'Loans and cards', nameLabel: 'Lender', arr: function () { return S.debts; }, empty: 'No loans or card balances. Add one to see when you will be debt-free.', addLabel: 'Add a loan',
-        cols: [{ k: 'type', label: 'Type', type: 'select', opts: DEBT_TYPES }, { k: 'rate', label: 'Rate % / yr', type: 'pct', min: 0, max: 60 }, { k: 'balance', label: 'Outstanding', type: 'money', min: 0 }, { k: 'emi', label: 'EMI / month', type: 'money', min: 0 }],
-        derived: { label: 'Debt-free in' }, make: function () { return { id: uid(), name: 'New loan', type: 'Personal loan', rate: 12, balance: 0, emi: 0 }; } }),
+        cols: [{ k: 'type', label: 'Type', type: 'select', opts: DEBT_TYPES }, { k: 'rate', label: 'Rate % / yr', type: 'pct', min: 0, max: 60 }, { k: 'balance', label: 'Outstanding', type: 'money', min: 0 }, { k: 'emi', label: 'EMI / month', type: 'money', min: 0 }, { k: 'limit', label: 'Card limit', type: 'money', min: 0 }],
+        derived: { label: 'Debt-free in' }, make: function () { return { id: uid(), name: 'New loan', type: 'Personal loan', rate: 12, balance: 0, emi: 0, limit: 0 }; } }),
       formCard('Pay it off faster', 'Put extra money towards the highest-rate loan. When a loan clears, its EMI moves to the next one.', S.profile, [{ k: 'extra', label: 'Extra payment / month', type: 'money', min: 0 }]),
       el('div', { class: 'tiles', id: 'db-cmp' }), chartCard('dbc', 'Balance over time', ''), el('div', { class: 'card', id: 'db-order' }));
     var cb = $('#view-credit'); cb.replaceChildren(el('div', { class: 'hero' }, el('p', { class: 'eyebrow', text: 'Credit score' }), el('div', { class: 'bignum', id: 'cb-big' }), el('p', { class: 'delta', id: 'cb-delta' })),
-      el('div', { class: 'tiles', id: 'cb-tiles' }),
-      formCard('Your credit report', 'From your CIBIL, Experian or CRIF report. Save a reading to track it over time.', S.cibil, [
+      el('div', { class: 'tiles', id: 'cb-tiles' }), cibilCard('cibc'),
+      formCard('Your credit report', 'Upload the PDF above, or type the numbers from any bureau. Utilisation updates by itself once your cards have limits on the Debt tab.', S.cibil, [
         { k: 'score', label: 'Score (300 to 900)', type: 'int', min: 0, max: 900 }, { k: 'date', label: 'As of', type: 'date' }, { k: 'util', label: 'Card utilisation %', type: 'pct', min: 0, max: 100 }, { k: 'enq', label: 'Enquiries, last 2 yrs', type: 'int', min: 0 }, { k: 'missed', label: 'Missed payments', type: 'int', min: 0 }]),
       el('div', { class: 'addrow solo' }, el('button', { class: 'btn tint', type: 'button', text: 'Save this reading to history', onclick: saveReading })),
       chartCard('cbc', 'Score history', ''), el('div', { class: 'card', id: 'cb-plan' }));
@@ -1136,6 +1298,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     bar.setAttribute('aria-label', 'Asset split: ' + label.join(', '));
   }
   function updateExtras() {
+    autoUtil(); refreshFlags();
     if (!$('#nw-slot') || !$('#nw-slot').firstChild) return;
     var H = S.horizon, N = nwNumbers(), inv = sumBy(S.stocks, 'sip') + sumBy(S.mfs, 'sip'), dca = sumBy(S.crypto, 'dca'), emis = sumBy(S.debts, 'emi'), pr = S.profile;
     /* net worth */
