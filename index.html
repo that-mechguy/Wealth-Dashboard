@@ -226,6 +226,14 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
 .orow .r2 { color: var(--ink2); font-size: 13px; font-variant-numeric: tabular-nums; }
 .addrow.solo { padding: 10px 2px 0; }
 .proj.due { color: var(--warn); }
+.tip { display: flex; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--line); align-items: flex-start; }
+.tipb { min-width: 0; } .tipb b { font-weight: 600; } .tipb p { margin: 3px 0 0; font-size: 13px; color: var(--ink2); }
+.pill { flex: none; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 3px 9px; white-space: nowrap; margin-top: 1px; min-width: 84px; text-align: center; }
+.pill.urgent { background: color-mix(in srgb, var(--loss) 14%, transparent); color: var(--loss); }
+.pill.next { background: var(--warn-bg); color: var(--warn); }
+.pill.consider { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.pill.good { background: color-mix(in srgb, var(--gain) 14%, transparent); color: var(--gain); }
+@media (max-width: 520px) { .tip { flex-direction: column; gap: 6px; } .pill { min-width: 0; } }
 .hhead.grow, .hrow.grow { grid-template-columns: none; }
 @media (max-width: 820px) {
   .hrow.grow { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
@@ -266,6 +274,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
   <div class="tabsbar">
     <div class="seg wide" role="tablist" aria-label="Sections">
       <button role="tab" type="button" id="tab-overview" data-tab="overview" aria-selected="true">Overview</button>
+      <button role="tab" type="button" id="tab-stocks" data-tab="stocks" aria-selected="false">Stocks</button>
       <button role="tab" type="button" id="tab-mutual-funds" data-tab="mutual-funds" aria-selected="false">Mutual funds</button>
       <button role="tab" type="button" id="tab-epf" data-tab="epf" aria-selected="false">EPF</button>
       <button role="tab" type="button" id="tab-crypto" data-tab="crypto" aria-selected="false">Crypto</button>
@@ -279,6 +288,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
 
   <main>
     <section id="view-overview" role="tabpanel" aria-labelledby="tab-overview"></section>
+    <section id="view-st" role="tabpanel" aria-labelledby="tab-stocks" hidden></section>
     <section id="view-mf" role="tabpanel" aria-labelledby="tab-mutual-funds" hidden></section>
     <section id="view-epf" role="tabpanel" aria-labelledby="tab-epf" hidden></section>
     <section id="view-crypto" role="tabpanel" aria-labelledby="tab-crypto" hidden></section>
@@ -466,7 +476,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
           if (!busy) adopt(d);
         }
         remoteAt = r.data.updated_at;
-      }
+      } else if (first) { S.demo = false; S.stocks = []; S.mfs = []; S.asOf = ''; S.source = ''; renderAll(); }
       renderBanner();
     });
   }
@@ -604,12 +614,12 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
   }
 
   /* ---------- panels ---------- */
-  var PANEL = { overview: { id: 'overview', root: '#view-overview', kind: 'all' }, mf: { id: 'mutual-funds', root: '#view-mf', kind: 'mf' } };
+  var PANEL = { st: { id: 'stocks', root: '#view-st', kind: 'stock' }, mf: { id: 'mutual-funds', root: '#view-mf', kind: 'mf' } };
   function buildPanel(key) {
     var isMF = key === 'mf', root = $(PANEL[key].root);
     root.replaceChildren();
     root.append(
-      el('div', { class: 'hero' }, el('p', { class: 'eyebrow', text: isMF ? 'Mutual fund value' : 'Portfolio value' }), el('div', { class: 'bignum', id: key + '-big' }), el('p', { class: 'delta', id: key + '-delta' })),
+      el('div', { class: 'hero' }, el('p', { class: 'eyebrow', text: isMF ? 'Mutual fund value' : 'Stocks and ETFs value' }), el('div', { class: 'bignum', id: key + '-big' }), el('p', { class: 'delta', id: key + '-delta' })),
       el('div', { class: 'tiles', id: key + '-tiles' }),
       controls(),
       el('div', { class: 'card' },
@@ -622,7 +632,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
         el('header', null, el('div', null, el('h2', { text: isMF ? 'Mutual funds' : 'Stocks and ETFs' }), el('p', { class: 'sub', id: key + '-hsub' }))),
         el('div', { class: 'hhead', id: key + '-hhead' }),
         el('div', { id: key + '-rows' }),
-        el('div', { class: 'addrow' }, el('button', { class: 'btn tint', type: 'button', text: isMF ? 'Add a mutual fund' : 'Add a stock or ETF', onclick: function () { addHolding(isMF ? 'mf' : 'stock'); } }))
+        el('div', { class: 'addrow' }, el('button', { class: 'btn tint', type: 'button', text: isMF ? 'Add a mutual fund' : 'Add a stock or ETF', onclick: function () { addHolding(isMF ? 'mf' : 'stock'); } }), ' ', el('button', { class: 'btn tint', type: 'button', text: 'Import from Groww', onclick: function () { $('#fileIn').click(); } }))
       )
     );
   }
@@ -710,8 +720,8 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
   function refreshDerived() { refreshDerived0(); updateExtras(); }
   function refreshDerived0() {
     var H = S.horizon, sh = shift();
-    ['overview', 'mf'].forEach(function (key) {
-      var isMF = key === 'mf', list = allOf(isMF ? 'mf' : 'all'), s = sums(list), p = project(list, H, sh);
+    ['st', 'mf'].forEach(function (key) {
+      var isMF = key === 'mf', list = isMF ? S.mfs : S.stocks, s = sums(list), p = project(list, H, sh);
       $('#' + key + '-big').textContent = big(s.value);
       $('#' + key + '-big').title = rs(s.value);
       var d = $('#' + key + '-delta'); d.replaceChildren();
@@ -756,7 +766,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
   function seriesFor(key) {
     var H = S.horizon, sh = shift();
     if (key === 'mf') return [{ name: 'Mutual funds', cls: 's2', vals: project(S.mfs, H, sh).val }];
-    return [{ name: 'Stocks and ETFs', cls: 's1', vals: project(S.stocks, H, sh).val }, { name: 'Mutual funds', cls: 's2', vals: project(S.mfs, H, sh).val }];
+    return [{ name: 'Stocks and ETFs', cls: 's1', vals: project(S.stocks, H, sh).val }];
   }
   function drawChart(key, list, p) {
     var host = $('#' + key + '-chart'); if (!host || host.hidden || !host.clientWidth) { chartState[key] = null; if (host && !host.clientWidth) host.setAttribute('data-stale', '1'); return; }
@@ -825,9 +835,9 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     series.forEach(function (s) { lg.append(el('span', null, el('i', { style: 'background:var(--' + s.cls + ')' }), s.name)); });
     lg.append(el('span', null, el('i', { style: 'background:var(--money)' }), 'You put in'));
     // table
-    var tb = $('#' + key + '-table'), head = ['Year'].concat(series.map(function (s) { return s.name; }), key === 'mf' ? [] : ['Total'], ['You put in', 'Growth']);
+    var tb = $('#' + key + '-table'), head = ['Year'].concat(series.map(function (s) { return s.name; }), series.length === 1 ? [] : ['Total'], ['You put in', 'Growth']);
     var tbl = el('table', null, el('thead', null, el('tr', null, head.map(function (t) { return el('th', { text: t }); }))), el('tbody', null, totals.map(function (t, i) {
-      var cells = [String(yr + i)].concat(series.map(function (s) { return rs(s.vals[i]); }), key === 'mf' ? [] : [rs(t)], [rs(money[i]), rs(t - money[i])]);
+      var cells = [String(yr + i)].concat(series.map(function (s) { return rs(s.vals[i]); }), series.length === 1 ? [] : [rs(t)], [rs(money[i]), rs(t - money[i])]);
       return el('tr', null, cells.map(function (c) { return el('td', { text: c }); }));
     })));
     tb.replaceChildren(tbl);
@@ -844,29 +854,31 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
       b.hidden = false; b.className = 'banner warn';
       b.append(el('span', { text: 'This view cannot save your data. What you enter stays only until you close the page. Reload and sign in again to keep it.' }));
     }
+    var empty = !S.demo && !S.stocks.length && !S.mfs.length && !S.debts.length && !S.crypto.length && !S.ins.length && !(S.epf.balance > 0);
+    if (empty && ENV.dbState !== 'none') { b.hidden = false; b.append(el('span', { text: 'Signed in' + (USER && USER.email ? ' as ' + USER.email : '') + '. Nothing is saved here yet. Import your Groww holdings files, or fill in EPF, debt and the other tabs by hand.' }), el('button', { class: 'btn', type: 'button', text: 'Import files', onclick: function () { $('#fileIn').click(); } })); }
     var a = $('#asof');
     if (S.demo) a.textContent = 'Sample data';
     else {
       var d = S.asOf ? new Date(S.asOf + 'T00:00:00') : null;
-      a.textContent = (d && !isNaN(d) ? 'Values as of ' + d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Your portfolio') + (S.source ? ' · ' + S.source : '');
+      a.textContent = (d && !isNaN(d) ? 'Values as of ' + d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Your portfolio') + (S.source ? ' · ' + S.source : '') + (USER && USER.email ? ' · ' + USER.email : '');
     }
     if (!S.demo && ENV.ref && !dirty && !saving) setSaveState('');
   }
-  var TABS = ['overview', 'mutual-funds', 'epf', 'crypto', 'debt', 'credit', 'insurance'];
-  var VIEW = { overview: '#view-overview', 'mutual-funds': '#view-mf', epf: '#view-epf', crypto: '#view-crypto', debt: '#view-debt', credit: '#view-credit', insurance: '#view-insurance' };
+  var TABS = ['overview', 'stocks', 'mutual-funds', 'epf', 'crypto', 'debt', 'credit', 'insurance'];
+  var VIEW = { overview: '#view-overview', stocks: '#view-st', 'mutual-funds': '#view-mf', epf: '#view-epf', crypto: '#view-crypto', debt: '#view-debt', credit: '#view-credit', insurance: '#view-insurance' };
   function applyTab() {
     var hash = (location.hash || '').replace('#', ''), tab = TABS.indexOf(hash) >= 0 ? hash : 'overview';
     document.querySelectorAll('[role="tab"]').forEach(function (t) { var on = t.getAttribute('data-tab') === tab; t.setAttribute('aria-selected', String(on)); if (on) { try { t.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (e) {} } });
     TABS.forEach(function (t) { $(VIEW[t]).hidden = t !== tab; });
     refreshDerived();
   }
-  function renderAll() { renderBanner(); syncControls(); renderRows('overview'); renderRows('mf'); buildExtras(); applyTab(); }
-  function refreshAll() { syncControls(); renderRows('overview'); renderRows('mf'); refreshDerived(); }
+  function renderAll() { renderBanner(); syncControls(); renderRows('st'); renderRows('mf'); buildExtras(); applyTab(); }
+  function refreshAll() { syncControls(); renderRows('st'); renderRows('mf'); refreshDerived(); }
 
   /* ---------- more modules: net worth, cash flow, EPF, crypto, debt, credit, insurance ---------- */
   function today() { return new Date().toISOString().slice(0, 10); }
   function touch() {
-    if (S.demo) { S.stocks = []; S.mfs = []; S.demo = false; S.asOf = today(); S.source = 'Entered by hand'; renderBanner(); renderRows('overview'); renderRows('mf'); toast('Sample data cleared.'); markDirty(true); return; }
+    if (S.demo) { S.stocks = []; S.mfs = []; S.demo = false; S.asOf = today(); S.source = 'Entered by hand'; renderBanner(); renderRows('st'); renderRows('mf'); toast('Sample data cleared.'); markDirty(true); return; }
     markDirty();
   }
   function sumBy(a, k) { return a.reduce(function (t, x) { return t + (x[k] || 0); }, 0); }
@@ -915,6 +927,43 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     return Math.ceil(Math.log(e / (e - r * b)) / Math.log(1 + r));
   }
   function durText(m) { if (m == null) return 'never at this EMI'; if (m <= 0) return 'done'; var y = Math.floor(m / 12), mo = m % 12; return (y ? y + ' yr ' : '') + (mo ? mo + ' mo' : '') || '0 mo'; }
+
+
+  function emiInterest(P, rate, n) { var r = rate / 1200; if (!r) return 0; var e = P * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1); return e * n - P; }
+  function avgReturn() { var L = allOf('all'), v = sumBy(L, 'value'); return v > 0 ? L.reduce(function (t, x) { return t + (x.ret || 0) * (x.value || 0); }, 0) / v : 12; }
+  function debtTips(base, left) {
+    var D = S.debts.filter(function (d) { return d.balance > 0; }), T = [], pr = S.profile, income = pr.income || 0;
+    if (!D.length) return [{ l: 'good', t: 'No debt recorded', b: 'Add any loan or card balance in the list below and this page will work out how to clear it fastest.' }];
+    var byRate = D.slice().sort(function (a, b) { return b.rate - a.rate; }), top = byRate[0], ar = avgReturn();
+    D.forEach(function (d) {
+      var mi = d.balance * d.rate / 1200;
+      if (d.type === 'Credit card' || d.rate >= 24) T.push({ l: 'urgent', t: 'Clear ' + (d.name || 'the card') + ' before anything else', b: 'At ' + d.rate + '% it costs about ' + rs(mi) + ' a month in interest. Paying it off is a guaranteed ' + d.rate + '% return, which no investment can promise. Pay the full statement amount each month so it does not grow again.' });
+      var mo = monthsLeft(d); if (d.emi > 0 && mo == null) T.push({ l: 'urgent', t: (d.name || 'A loan') + ': the EMI does not cover the interest', b: 'The EMI of ' + rs(d.emi) + ' is below the ' + rs(mi) + ' of monthly interest, so the balance never falls. Raise the EMI or make a lump-sum payment.' });
+      else if (!d.emi && d.type !== 'Credit card') T.push({ l: 'next', t: 'Enter the EMI for ' + (d.name || 'this loan'), b: 'Without it the payoff date and savings below cannot be worked out.' });
+    });
+    if (income > 0) { var ratio = sumBy(S.debts, 'emi') / income; if (ratio > .5) T.push({ l: 'urgent', t: 'EMIs take ' + (ratio * 100).toFixed(0) + '% of your income', b: 'Lenders and planners like this under 40%. Clear the smallest or highest-rate loan first to free up cash, and avoid any new borrowing.' }); else if (ratio > .4) T.push({ l: 'next', t: 'EMIs are ' + (ratio * 100).toFixed(0) + '% of your income', b: 'Above the usual 40% line. Prepaying the highest-rate loan frees the most monthly cash.' }); }
+    if (left > 2000) {
+      var extra = Math.max(1000, Math.round(left * .5 / 1000) * 1000), f = debtRun(S.debts, extra, true);
+      if (!base.never && !f.never && base.months > f.months) T.push({ l: 'next', t: 'Put ' + rs(extra) + ' a month extra towards ' + (top.name || 'the top loan'), b: 'That is half of the ' + rs(left) + ' you have left each month. It clears all debt ' + durText(base.months - f.months) + ' sooner and saves about ' + big(base.interest - f.interest) + ' of interest. Try other amounts in the box below.' });
+    } else if (income > 0) T.push({ l: 'next', t: 'Free up money for prepayment', b: 'You have little left each month after spending, EMIs and investing. Even a small cut in an SIP or expense, pointed at ' + (top.name || 'your highest-rate loan') + ', shortens the loan.' });
+    var nc = byRate.filter(function (d) { return d.type !== 'Credit card' && d.rate < 24; })[0];
+    if (nc) {
+      if (nc.rate >= ar) T.push({ l: 'next', t: 'Prepay ' + (nc.name || 'the loan') + ' before adding to investments', b: 'Its ' + nc.rate + '% is at or above the ' + ar.toFixed(1) + '% you assume your investments earn, and the loan rate is certain.' });
+      else if (nc.rate < ar - 2) T.push({ l: 'consider', t: 'Keep investing while you repay ' + (nc.name || 'the loan') + ' on schedule', b: 'It costs ' + nc.rate + '% and you assume ' + ar.toFixed(1) + '% on investments. Prepaying early is optional here. Investment returns are not guaranteed, so a part-and-part approach is reasonable.' });
+    }
+    var hc = D.filter(function (d) { return d.type !== 'Home loan' && d.type !== 'Credit card' && d.rate >= 16 && d.balance >= 50000; })[0] || D.filter(function (d) { return d.type === 'Credit card' && d.balance >= 50000; })[0];
+    if (hc) { var save = emiInterest(hc.balance, hc.rate, 12) - emiInterest(hc.balance, 13, 12); if (save > 1000) T.push({ l: 'consider', t: 'Move ' + (hc.name || 'it') + ' to a cheaper loan', b: 'Repaying ' + big(hc.balance) + ' over 12 months at ' + hc.rate + '% costs about ' + big(emiInterest(hc.balance, hc.rate, 12)) + ' in interest. At 13% it would be about ' + big(emiInterest(hc.balance, 13, 12)) + ', saving roughly ' + big(save) + '. Only do this if the new loan replaces the old one, and check processing fees first.' }); }
+    if ((S.cibil.missed || 0) > 0) T.push({ l: 'next', t: 'Fix missed payments first', b: 'Your credit report shows ' + S.cibil.missed + ' missed payment' + (S.cibil.missed > 1 ? 's' : '') + '. Set auto-pay for every EMI so it does not happen again.' });
+    T.push({ l: 'consider', t: 'Check prepayment charges before a big payment', b: 'Floating-rate loans to individuals usually carry no prepayment penalty, but fixed-rate loans can. Ask the lender, and get a closure statement when a loan is cleared.' });
+    var ord = { urgent: 0, next: 1, consider: 2, good: 3 }; T.sort(function (a, b) { return ord[a.l] - ord[b.l]; });
+    return T;
+  }
+  var PILL = { urgent: '! Urgent', next: '→ Do next', consider: '◇ Consider', good: '✓ Good' };
+  function renderTips(base, left) {
+    var c = $('#db-tips'); c.replaceChildren(); var T = debtTips(base, left);
+    c.append(el('header', null, el('div', null, el('h2', { text: 'How to reduce your debt' }), el('p', { class: 'sub', text: 'Worked out from the loans and numbers on this page. Most important first.' }))));
+    T.forEach(function (t) { c.append(el('div', { class: 'tip' }, el('span', { class: 'pill ' + t.l, text: PILL[t.l] }), el('div', { class: 'tipb' }, el('b', { text: t.t }), el('p', { text: t.b })))); });
+  }
 
   function nwNumbers() {
     var H = S.horizon, sh = shift();
@@ -1039,6 +1088,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
       heroEl('nw', 'Net worth'),
       el('div', { class: 'tiles', id: 'nw-tiles' }),
       el('div', { class: 'card' }, el('header', null, el('div', null, el('h2', { text: 'Where it sits' }), el('p', { class: 'sub', id: 'alloc-sub' }))), el('div', { class: 'alloc', id: 'alloc-bar', role: 'img' }), el('div', { class: 'legend alloc-legend', id: 'alloc-legend' })),
+      controls(),
       chartCard('nwc', 'Net worth projection', ''),
       formCard('Monthly cash flow', 'Used for savings rate, debt load and insurance cover.', S.profile, [{ k: 'income', label: 'Take-home income / month', type: 'money', min: 0 }, { k: 'expense', label: 'Living expenses / month', type: 'money', min: 0 }]),
       el('div', { class: 'tiles', id: 'cf-tiles' }));
@@ -1052,7 +1102,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
         cols: [{ k: 'value', label: 'Value today', type: 'money', min: 0 }, { k: 'dca', label: 'Monthly buy', type: 'money', min: 0 }, { k: 'ret', label: 'Return % / yr', type: 'pct', min: 0, max: 40 }],
         derived: { label: 'In ' + S.horizon + ' yrs' }, make: function () { return { id: uid(), name: 'Bitcoin', value: 0, dca: 0, ret: 20 }; } }),
       note('Returns here are your guesses and are capped at 40%. Crypto is very volatile, so many planners keep it to 5% of net worth or less. Profits are taxed at a flat 30% in India plus 1% TDS on sales.'));
-    var db = $('#view-debt'); db.replaceChildren(heroEl('db', 'Total debt'), el('div', { class: 'tiles', id: 'db-tiles' }),
+    var db = $('#view-debt'); db.replaceChildren(heroEl('db', 'Total debt'), el('div', { class: 'tiles', id: 'db-tiles' }), el('div', { class: 'card', id: 'db-tips' }),
       listCard({ id: 'db', title: 'Loans and cards', nameLabel: 'Lender', arr: function () { return S.debts; }, empty: 'No loans or card balances. Add one to see when you will be debt-free.', addLabel: 'Add a loan',
         cols: [{ k: 'type', label: 'Type', type: 'select', opts: DEBT_TYPES }, { k: 'rate', label: 'Rate % / yr', type: 'pct', min: 0, max: 60 }, { k: 'balance', label: 'Outstanding', type: 'money', min: 0 }, { k: 'emi', label: 'EMI / month', type: 'money', min: 0 }],
         derived: { label: 'Debt-free in' }, make: function () { return { id: uid(), name: 'New loan', type: 'Personal loan', rate: 12, balance: 0, emi: 0 }; } }),
@@ -1068,7 +1118,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
       listCard({ id: 'in', title: 'Policies', nameLabel: 'Policy', arr: function () { return S.ins; }, empty: 'No policies yet. Add your term, health and motor cover.', addLabel: 'Add a policy',
         cols: [{ k: 'insurer', label: 'Insurer', type: 'text' }, { k: 'type', label: 'Type', type: 'select', opts: INS_TYPES }, { k: 'cover', label: 'Cover', type: 'money', min: 0 }, { k: 'premium', label: 'Premium / yr', type: 'money', min: 0 }, { k: 'renews', label: 'Renews on', type: 'date' }],
         derived: { label: 'Status' }, make: function () { return { id: uid(), name: 'New policy', insurer: '', type: 'Term life', cover: 0, premium: 0, renews: '' }; } }));
-    updateExtras();
+    syncControls(); updateExtras();
   }
   function saveReading() {
     var c = S.cibil; if (!(c.score >= 300 && c.score <= 900)) { toast('Enter a score between 300 and 900 first.'); return; }
@@ -1124,6 +1174,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     var sA = [], sB = []; for (var i = 0; i <= Hd; i++) { sA.push(histAt(base, i)); sB.push(histAt(fast, i)); }
     if (tot > 0) lineChart($('#dbc-chart'), { H: Hd, aria: 'Remaining debt over time.', legend: $('#dbc-legend'), table: $('#dbc-table'), lead: 0, series: [{ name: 'Paying only EMIs', cls: 's5', vals: sA, area: true }].concat((pr.extra || 0) > 0 ? [{ name: 'With extra and rollover', cls: 's3', vals: sB }] : []) });
     else { $('#dbc-chart').replaceChildren(el('div', { class: 'empty', text: 'Add a loan to see the payoff path.' })); $('#dbc-legend').replaceChildren(); $('#dbc-table').replaceChildren(); }
+    renderTips(base, left);
     document.querySelectorAll('#db-rows [data-d]').forEach(function (c) { var x = S.debts.filter(function (k) { return k.id === c.getAttribute('data-d'); })[0]; if (x) c.textContent = durText(monthsLeft(x)); });
     var ord = S.debts.filter(function (d) { return d.balance > 0; }).slice().sort(function (a, b) { return b.rate - a.rate; }), oc = $('#db-order'); oc.replaceChildren();
     if (ord.length > 1) { oc.append(el('header', null, el('div', null, el('h2', { text: 'Pay in this order' }), el('p', { class: 'sub', text: 'Highest rate first saves the most interest. Keep paying every EMI on time.' })))); ord.forEach(function (d, i) { oc.append(el('div', { class: 'orow' }, el('span', { class: 'n', text: String(i + 1) }), el('span', { class: 'nm2', text: (d.name || 'Loan') }), el('span', { class: 'r2', text: d.rate + '% · ' + big(d.balance) }))); }); oc.hidden = false; } else oc.hidden = true;
@@ -1150,8 +1201,9 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
 
   /* ---------- wiring ---------- */
   function boot() {
-    buildPanel('overview'); buildPanel('mf');
-    $('#view-overview').prepend(el('div', { id: 'nw-slot' }), el('h2', { class: 'secttl', text: 'Investment portfolio' }));
+    buildPanel('st'); buildPanel('mf');
+    $('#view-overview').prepend(el('div', { id: 'nw-slot' }));
+    $('#view-st').append(note('Groww has no live link for this site. Export your holdings from Groww, then tap Import from Groww. Your SIP, step-up and return settings are kept each time.'));
     document.querySelectorAll('[role="tab"]').forEach(function (t) {
       t.addEventListener('click', function () { try { location.hash = t.getAttribute('data-tab'); } catch (e) {} applyTab(); });
     });
