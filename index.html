@@ -310,7 +310,6 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
       <button role="tab" type="button" id="tab-debt" data-tab="debt" aria-selected="false">Debt</button>
       <button role="tab" type="button" id="tab-credit" data-tab="credit" aria-selected="false">Credit</button>
       <button role="tab" type="button" id="tab-insurance" data-tab="insurance" aria-selected="false">Insurance</button>
-      <button role="tab" type="button" id="tab-ask" data-tab="ask" aria-selected="false">Ask</button>
     </div>
   </div>
 
@@ -325,7 +324,6 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     <section id="view-debt" role="tabpanel" aria-labelledby="tab-debt" hidden></section>
     <section id="view-credit" role="tabpanel" aria-labelledby="tab-credit" hidden></section>
     <section id="view-insurance" role="tabpanel" aria-labelledby="tab-insurance" hidden></section>
-    <section id="view-ask" role="tabpanel" aria-labelledby="tab-ask" hidden></section>
   </main>
 
   <footer class="foot">
@@ -896,8 +894,8 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     }
     if (!S.demo && ENV.ref && !dirty && !saving) setSaveState('');
   }
-  var TABS = ['overview', 'stocks', 'mutual-funds', 'epf', 'crypto', 'debt', 'credit', 'insurance', 'ask'];
-  var VIEW = { overview: '#view-overview', stocks: '#view-st', 'mutual-funds': '#view-mf', epf: '#view-epf', crypto: '#view-crypto', debt: '#view-debt', credit: '#view-credit', insurance: '#view-insurance', ask: '#view-ask' };
+  var TABS = ['overview', 'stocks', 'mutual-funds', 'epf', 'crypto', 'debt', 'credit', 'insurance'];
+  var VIEW = { overview: '#view-overview', stocks: '#view-st', 'mutual-funds': '#view-mf', epf: '#view-epf', crypto: '#view-crypto', debt: '#view-debt', credit: '#view-credit', insurance: '#view-insurance' };
   function applyTab() {
     var hash = (location.hash || '').replace('#', ''), tab = TABS.indexOf(hash) >= 0 ? hash : 'overview';
     document.querySelectorAll('[role="tab"]').forEach(function (t) { var on = t.getAttribute('data-tab') === tab; t.setAttribute('aria-selected', String(on)); if (on) { try { t.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (e) {} } });
@@ -1201,10 +1199,8 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
       el('p', { class: 'note ask-foot' }, 'Key saved (…' + key.slice(-4) + '). ', el('button', { class: 'linkbtn', type: 'button', text: 'Remove key', onclick: function () { S.settings.anthropic_key = ''; touch(); buildAsk(); } }), ' ', el('button', { class: 'linkbtn', type: 'button', text: 'Clear chat', onclick: function () { CHAT = []; renderChat(); } })));
   }
   function buildAsk() {
-    var v = $('#view-ask'), d = $('#db-ask');
+    var d = $('#db-ask');
     if (d) { d.replaceChildren(askPanel('Ask about your debt', 'Ask Claude what to do next. It reads the loans and cards below. Not licensed financial advice.', ASK_DEBT)); }
-    if (v) { v.replaceChildren(el('div', { class: 'hero' }, el('p', { class: 'eyebrow', text: 'Ask' }), el('div', { class: 'bignum', text: 'Ask Claude' }), el('p', { class: 'delta', text: 'Answers use the numbers on your dashboard' })),
-      askPanel('Your questions', 'Not licensed financial advice. Your dashboard numbers are sent to Anthropic when you ask. Nothing else is shared.', ASK_IDEAS)); }
     renderChat();
   }
   /* ---- Insurance: read a policy document, details panel, and a chat about it ---- */
@@ -1284,12 +1280,25 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
       });
     }).catch(function (e) { say((e && e.message) || 'Could not read this PDF.', true); });
   }
+  var INS_PENDING = null;
   function insUploadCard() {
-    if (!S.settings.anthropic_key) return connectCard('Read a policy document', 'Upload a policy PDF and Claude fills in its cover, premium, waiting periods and exclusions, and you can ask it questions. This needs your own Anthropic API key. It is saved in your private database and sent only to Anthropic.');
-    var inp = el('input', { type: 'file', accept: 'application/pdf,.pdf', multiple: true, style: 'display:none', id: 'ins-file' }), status = el('div', { id: 'ins-status' });
-    inp.addEventListener('change', function () { var fs = inp.files ? Array.prototype.slice.call(inp.files) : []; inp.value = ''; if (fs.length) { var t = INS_TARGET; INS_TARGET = null; ingestPolicy(fs, t, 'new', status); } });
-    return el('div', { class: 'card' }, el('header', null, el('div', null, el('h2', { text: 'Add a policy from its documents' }), el('p', { class: 'sub', text: 'Upload the policy PDF. If the policy comes as several files, such as a certificate and the terms and conditions, select them all together. They are read on this device, then the text goes to Claude with your key (a few cents per policy). The text is kept in your private database so you can ask questions later.' }))),
-      el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Choose policy PDF(s)', onclick: function () { INS_TARGET = null; inp.click(); } }), inp), el('div', { class: 'pad' }, status));
+    var inp = el('input', { type: 'file', accept: 'application/pdf,.pdf', multiple: true, style: 'display:none', id: 'ins-file' }), status = el('div', { id: 'ins-status' }), hasKey = !!S.settings.anthropic_key, parts = [];
+    inp.addEventListener('change', function () {
+      var fs = inp.files ? Array.prototype.slice.call(inp.files) : []; inp.value = ''; if (!fs.length) return;
+      if (!S.settings.anthropic_key) { INS_PENDING = fs; status.replaceChildren(el('p', { class: 'note warn', text: 'Paste your Claude API key above and tap Save key. Reading ' + (fs.length > 1 ? 'these documents' : fs[0].name) + ' then starts on its own.' })); return; }
+      var t = INS_TARGET; INS_TARGET = null; ingestPolicy(fs, t, 'new', status);
+    });
+    if (!hasKey) {
+      var kin = el('input', { class: 'in akey', type: 'password', autocomplete: 'off', placeholder: 'sk-ant-…', 'aria-label': 'Claude API key' }), kmsg = el('p', { class: 'note warn', hidden: true });
+      parts.push(el('div', { class: 'fgrid' }, el('label', { class: 'fld' }, el('span', { text: 'Your Claude API key (needed once)' }), kin)), kmsg,
+        el('div', { class: 'addrow solo' }, el('button', { class: 'btn tint', type: 'button', text: 'Save key', onclick: function () {
+          var k = kin.value.trim(); if (!/^sk-ant-/.test(k)) { kmsg.textContent = 'That does not look like an Anthropic key. It starts with sk-ant-.'; kmsg.hidden = false; return; }
+          S.settings.anthropic_key = k; touch(); var pend = INS_PENDING; INS_PENDING = null; renderAll();
+          if (pend) setTimeout(function () { ingestPolicy(pend, null, 'new', $('#ins-status')); }, 50);
+        } })));
+    }
+    return el('div', { class: 'card' }, el('header', null, el('div', null, el('h2', { text: 'Add a policy from its documents' }), el('p', { class: 'sub', text: 'Upload the policy PDF, or select several files together, such as a certificate and the terms and conditions. It is read on this device, then Claude reads it with your own API key (a few cents per policy) and fills in the details by itself. The text is kept in your private database so you can ask questions later.' }))),
+      parts, el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Upload policy document', onclick: function () { INS_TARGET = null; inp.click(); } }), inp), el('div', { class: 'pad' }, status));
   }
   function kvRow(k, v) { return (v == null || v === '' || (Array.isArray(v) && !v.length)) ? null : el('div', { class: 'kv' }, el('span', { class: 'kk', text: k }), el('span', { class: 'kvv', text: v })); }
   function listBlock(title, arr, fmt) { arr = (arr || []).filter(Boolean); if (!arr.length) return null; return el('div', { class: 'blk' }, el('h3', { text: title }), el('ul', null, arr.map(function (x) { return el('li', { text: fmt ? fmt(x) : String(x) }); }))); }
