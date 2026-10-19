@@ -1138,7 +1138,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
       insurance: S.ins.map(function (p) { return { name: p.name, type: p.type, cover: R(p.cover), premium_per_year: R(p.premium), renews: p.renews || null, summary: p.details && p.details.summary || undefined }; })
     };
   }
-  var ASK_SYSTEM = 'You are the money assistant inside one person\'s personal wealth dashboard in India. The JSON below is their current dashboard data; amounts are in rupees. Use it and do not invent figures. Show the arithmetic briefly. Use Indian conventions (₹, lakh, crore). If a rate or EMI is marked as an estimate, say the answer depends on it and tell them to enter the real figure. If an important fact is missing (for example whether they pay cards in full), state your assumption or ask one short question. Be concise: short paragraphs or a few bullets, no headings. You are not a licensed adviser: give the numbers and the trade-offs, not guarantees, and mention prepayment charges, tax or lock-ins when they matter. If sample_data is true, say the numbers are sample data. Never ask for PAN, account numbers or passwords.\n\nDASHBOARD DATA:\n';
+  var ASK_SYSTEM = 'Keep answers short: under 250 words, lead with the answer, then at most five bullets. You are the money assistant inside one person\'s personal wealth dashboard in India. The JSON below is their current dashboard data; amounts are in rupees. Use it and do not invent figures. Show the arithmetic briefly. Use Indian conventions (₹, lakh, crore). If a rate or EMI is marked as an estimate, say the answer depends on it and tell them to enter the real figure. If an important fact is missing (for example whether they pay cards in full), state your assumption or ask one short question. Be concise: short paragraphs or a few bullets, no headings. You are not a licensed adviser: give the numbers and the trade-offs, not guarantees, and mention prepayment charges, tax or lock-ins when they matter. If sample_data is true, say the numbers are sample data. Never ask for PAN, account numbers or passwords.\n\nDASHBOARD DATA:\n';
 
   /* Claude runs on the server: a Supabase Edge Function holds the API key and checks your sign-in */
   function claudeFetch(body) {
@@ -1152,7 +1152,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     if (!USER || !SB) return Promise.reject({ message: 'Sign in first.' });
     var msgs = []; CHAT.forEach(function (m) { if (m.role !== 'user' && m.role !== 'assistant') return; var l = msgs[msgs.length - 1]; if (l && l.role === m.role) l.content += '\n\n' + m.content; else msgs.push({ role: m.role, content: m.content }); });
     msgs = msgs.slice(-12); while (msgs.length && msgs[0].role !== 'user') msgs.shift();
-    return claudeFetch(JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 1200, system: ASK_SYSTEM + JSON.stringify(finContext()), messages: msgs }))
+    return claudeFetch(JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 4000, system: ASK_SYSTEM + JSON.stringify(finContext()), messages: msgs }))
       .catch(function () { throw { message: 'Could not reach Claude. Check your internet connection.' }; })
       .then(function (res) { return res.json().catch(function () { return {}; }).then(function (j) {
         if (!res.ok) {
@@ -1268,15 +1268,15 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     say('Reading ' + (files.length > 1 ? files.length + ' documents' : files[0].name) + ' on this device…');
     var texts = [], pages = 0, p = Promise.resolve();
     files.forEach(function (f) { p = p.then(function () { return readPdfText(f); }).then(function (r) { texts.push('=== DOCUMENT: ' + f.name + ' ===\n' + r.text); pages += r.pages; }); });
-    p.then(function () {
+    return p.then(function () {
       var plain = texts.join('').replace(/\[Page \d+\]/g, '').replace(/=== DOCUMENT:[^\n]*===/g, '').replace(/\s+/g, ' ').trim();
       if (plain.length < 500) throw { message: 'This PDF has almost no readable text. It may be a scan or photo. Download the text version of the policy from your insurer and try again.' };
       return (mode === 'add' && target && target.doc ? getDoc(target.doc.id) : Promise.resolve('')).then(function (old) {
         var all = (old ? old + '\n\n' : '') + texts.join('\n\n'), truncated = all.length > DOC_CAP, text = truncated ? all.slice(0, DOC_CAP) : all;
         var names = (mode === 'add' && target && target.doc && target.doc.files ? target.doc.files : []).concat(files.map(function (f) { return f.name; })), pg = (mode === 'add' && target && target.doc ? target.doc.pages || 0 : 0) + pages;
         say('Claude is reading the policy (' + pg + ' pages). This takes up to a minute…');
-        return claudeRaw(INS_SYSTEM, [{ role: 'user', content: 'POLICY DOCUMENT TEXT:\n' + text }], 3500).then(function (a) {
-          var j = looseJson(a.text); if (!j || typeof j !== 'object') throw { message: 'Claude could not turn this document into details. Try again, or add the policy by hand.' };
+        return claudeRaw(INS_SYSTEM, [{ role: 'user', content: 'POLICY DOCUMENT TEXT:\n' + text }], 8000).then(function (a) {
+          var j = looseJson(a.text); if (!j || typeof j !== 'object') throw { message: a.cut ? 'The policy is long and Claude ran out of room for its answer. Upload the main policy certificate on its own, then use Add another document.' : 'Claude could not turn this document into details. If these files are different policies, upload them one at a time. Otherwise try again, or add the policy by hand.' };
           var docId = target && target.doc ? target.doc.id : uid(), doc = { id: docId, files: names, chars: text.length, pages: pg, truncated: truncated, at: today() };
           var x = target || { id: uid(), name: '', insurer: '', type: 'Other', cover: 0, premium: 0, renews: '' };
           fillPolicy(x, j, doc); if (!target) S.ins.push(x);
@@ -1286,12 +1286,34 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
       });
     }).catch(function (e) { say((e && e.message) || 'Could not read this PDF.', true); });
   }
+  var GROUP_SYSTEM = 'You are given the opening text of several insurance PDFs. Group the files that belong to the SAME policy (for example a policy certificate and the terms and conditions of that same product from the same insurer). Different insurers or different products are different policies. Return JSON only, like {"groups":[[0,1],[2]]}, using each file number exactly once.';
+  var MANY_BUSY = false;
+  function ingestMany(files, status) {
+    if (files.length < 2) return ingestPolicy(files, null, 'new', status);
+    if (MANY_BUSY || INS_BUSY) return; MANY_BUSY = true; INS_BUSY = 'busy';
+    status.replaceChildren(el('p', { class: 'note', text: 'Checking which documents belong to the same policy…' }));
+    var all = files.map(function (f, i) { return i; });
+    Promise.all(files.map(function (f) { return readPdfText(f).then(function (r) { return r.text.replace(/\[Page \d+\]/g, '').replace(/\s+/g, ' ').slice(0, 1500); }).catch(function () { return ''; }); }))
+      .then(function (heads) { return claudeRaw(GROUP_SYSTEM, [{ role: 'user', content: heads.map(function (h, i) { return 'FILE ' + i + ' (' + files[i].name + '):\n' + h; }).join('\n\n') }], 300); })
+      .then(function (a) {
+        var j = looseJson(a.text), g = j && j.groups, seen = {}, ok = Array.isArray(g) && g.length > 0;
+        if (ok) g.forEach(function (grp) { if (!Array.isArray(grp) || !grp.length) ok = false; else grp.forEach(function (i) { if (!(i >= 0 && i < files.length) || seen[i]) ok = false; seen[i] = 1; }); });
+        return ok && Object.keys(seen).length === files.length ? g : [all];
+      }, function () { return [all]; })
+      .then(function (groups) {
+        var chain = Promise.resolve(), n = groups.length;
+        groups.forEach(function (grp, k) {
+          chain = chain.then(function () { INS_BUSY = ''; if (n > 1) toast('Reading policy ' + (k + 1) + ' of ' + n + '…'); return ingestPolicy(grp.map(function (i) { return files[i]; }), null, 'new', status); });
+        });
+        return chain;
+      }).then(function () { MANY_BUSY = false; }, function () { MANY_BUSY = false; INS_BUSY = ''; });
+  }
   var INS_PENDING = null;
   function insUploadCard() {
     var inp = el('input', { type: 'file', accept: 'application/pdf,.pdf', multiple: true, style: 'display:none', id: 'ins-file' }), status = el('div', { id: 'ins-status' }), parts = [];
     inp.addEventListener('change', function () {
       var fs = inp.files ? Array.prototype.slice.call(inp.files) : []; inp.value = ''; if (!fs.length) return;
-      var t = INS_TARGET; INS_TARGET = null; ingestPolicy(fs, t, 'new', status);
+      var t = INS_TARGET; INS_TARGET = null; if (t) ingestPolicy(fs, t, 'new', status); else ingestMany(fs, status);
     });
     return el('div', { class: 'card' }, el('header', null, el('div', null, el('h2', { text: 'Add a policy from its documents' }), el('p', { class: 'sub', text: 'Upload the policy PDF, or select several files together, such as a certificate and the terms and conditions. It is read on this device, then Claude reads it with your own API key (a few cents per policy) and fills in the details by itself. The text is kept in your private database so you can ask questions later.' }))),
       parts, el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Upload policy document', onclick: function () { INS_TARGET = null; inp.click(); } }), inp), el('div', { class: 'pad' }, status), null);
@@ -1345,7 +1367,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
       var msgs = []; h.forEach(function (m) { if (m.role !== 'user' && m.role !== 'assistant') return; var l = msgs[msgs.length - 1]; if (l && l.role === m.role) l.content += '\n\n' + m.content; else msgs.push({ role: m.role, content: m.content }); });
       msgs = msgs.slice(-12); while (msgs.length && msgs[0].role !== 'user') msgs.shift();
       var sys = [{ type: 'text', text: POL_SYSTEM + '\n\nEXTRACTED SUMMARY (may contain mistakes; the document text is the source of truth):\n' + JSON.stringify(x.details || {}) }, { type: 'text', text: 'POLICY DOCUMENT TEXT:\n' + text, cache_control: { type: 'ephemeral' } }];
-      return claudeRaw(sys, msgs, 1200);
+      return claudeRaw(sys, msgs, 4000);
     }).then(function (a) { h.push({ role: 'assistant', content: a.text + (a.cut ? '\n\n(The answer was cut off. Ask me to continue.)' : '') }); }).catch(function (e) { h.push({ role: 'error', content: (e && e.message) || 'Something went wrong.' }); })
       .then(function () { POL_BUSY = false; renderPol(x.id); });
   }
