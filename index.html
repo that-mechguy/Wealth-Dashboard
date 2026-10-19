@@ -1193,7 +1193,8 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
   }
   function askPanel(title, sub, ideas) {
     var key = S.settings.anthropic_key, head = el('header', null, el('div', null, el('h2', { text: title }), el('p', { class: 'sub', text: sub })));
-    if (!key) return connectCard(title, 'To ask questions, connect your own Anthropic API key. It is saved in your private database (only your login can read it) and is sent only to Anthropic.');
+    if (!key) return el('div', { class: 'card' }, head, el('p', { class: 'note', text: 'To ask questions, add your Claude API key once in the Insurance tab. It is shared with this chat.' }),
+      el('div', { class: 'addrow solo' }, el('button', { class: 'btn tint', type: 'button', text: 'Go to Insurance', onclick: function () { var t = document.getElementById('tab-insurance'); if (t) t.click(); } })));
     var ta = el('textarea', { class: 'in chat-in', rows: '2', placeholder: 'Ask about your money…', 'aria-label': 'Your question' });
     function go() { var q = ta.value; if (!q.trim() || CHAT_BUSY) return; ta.value = ''; sendChat(q); }
     ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && window.matchMedia('(hover: hover)').matches) { e.preventDefault(); go(); } });
@@ -1201,7 +1202,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
       el('div', { class: 'chips' }, ideas.map(function (q) { return el('button', { class: 'btn tint sm', type: 'button', text: q, onclick: function () { sendChat(q); } }); })),
       el('div', { class: 'chat-log', role: 'log', 'aria-live': 'polite', hidden: true }),
       el('div', { class: 'chat-bar' }, ta, el('button', { class: 'btn chat-send', type: 'button', text: 'Send', onclick: go })),
-      el('p', { class: 'note ask-foot' }, 'Key saved (…' + key.slice(-4) + '). ', el('button', { class: 'linkbtn', type: 'button', text: 'Remove key', onclick: function () { S.settings.anthropic_key = ''; lsSet(''); touch(); buildAsk(); } }), ' ', el('button', { class: 'linkbtn', type: 'button', text: 'Clear chat', onclick: function () { CHAT = []; renderChat(); } })));
+      el('p', { class: 'note ask-foot' }, 'Key saved (…' + key.slice(-4) + '). ', el('button', { class: 'linkbtn', type: 'button', text: 'Clear chat', onclick: function () { CHAT = []; renderChat(); } })));
   }
   function buildAsk() {
     var d = $('#db-ask');
@@ -1303,7 +1304,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
         } })));
     }
     return el('div', { class: 'card' }, el('header', null, el('div', null, el('h2', { text: 'Add a policy from its documents' }), el('p', { class: 'sub', text: 'Upload the policy PDF, or select several files together, such as a certificate and the terms and conditions. It is read on this device, then Claude reads it with your own API key (a few cents per policy) and fills in the details by itself. The text is kept in your private database so you can ask questions later.' }))),
-      parts, el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Upload policy document', onclick: function () { INS_TARGET = null; inp.click(); } }), inp), el('div', { class: 'pad' }, status));
+      parts, el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Upload policy document', onclick: function () { INS_TARGET = null; inp.click(); } }), inp), el('div', { class: 'pad' }, status), hasKey ? el('p', { class: 'note ask-foot' }, 'Claude key saved (…' + S.settings.anthropic_key.slice(-4) + '). ', el('button', { class: 'linkbtn', type: 'button', text: 'Remove key', onclick: function () { S.settings.anthropic_key = ''; lsSet(''); touch(); renderAll(); } })) : null);
   }
   function kvRow(k, v) { return (v == null || v === '' || (Array.isArray(v) && !v.length)) ? null : el('div', { class: 'kv' }, el('span', { class: 'kk', text: k }), el('span', { class: 'kvv', text: v })); }
   function listBlock(title, arr, fmt) { arr = (arr || []).filter(Boolean); if (!arr.length) return null; return el('div', { class: 'blk' }, el('h3', { text: title }), el('ul', null, arr.map(function (x) { return el('li', { text: fmt ? fmt(x) : String(x) }); }))); }
