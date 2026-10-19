@@ -177,6 +177,16 @@ h1 { margin: 0; font-size: 34px; line-height: 1.1; font-weight: 700; letter-spac
 .chat-bar { display: flex; gap: 8px; padding: 0 16px 14px; align-items: flex-end; }
 .chat-in { flex: 1; min-width: 0; min-height: 44px; resize: vertical; font: inherit; }
 .linkbtn { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; }
+.pad { padding: 0 16px 14px; }
+.ph0 { margin: 0 0 4px; font-size: 15px; }
+.psum { margin: 0 0 12px; font-size: 14.5px; line-height: 1.55; }
+.kvgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 0 18px; margin-bottom: 10px; }
+.kvgrid.one { grid-template-columns: 1fr; }
+.kv { display: flex; flex-direction: column; gap: 1px; padding: 8px 0; border-top: 1px solid var(--line); }
+.kk { font-size: 12px; color: var(--ink2); } .kvv { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.blk { margin: 12px 0 4px; } .blk h3 { margin: 0 0 4px; font-size: 14px; } .blk ul { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.55; }
+.polchat { border-top: 1px solid var(--line); padding-top: 12px; }
+.ins-detail-card .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .chip { border-radius: 6px; padding: 1px 6px; font-size: 11px; font-weight: 600; background: var(--warn-bg); color: var(--warn); }
 .up { color: var(--gain); font-weight: 600; } .down { color: var(--loss); font-weight: 600; }
 .proj { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -1088,8 +1098,8 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
         o.cols.forEach(function (c) { cells.push(el('label', { class: 'c', 'data-label': c.label }, fieldInput(x, c.k, c, updateExtras))); });
         if (o.derived) cells.push(el('div', { class: 'c proj', 'data-label': o.derived.label, 'data-d': x.id }));
         cells.push(el('button', { class: 'del', type: 'button', 'aria-label': 'Remove ' + (x.name || 'row'), text: '×', onclick: function () {
-          var a = o.arr(), i = a.indexOf(x); if (i < 0) return; a.splice(i, 1); rebuild(); updateExtras(); touch();
-          toast('Removed ' + (x.name || 'row'), { label: 'Undo', run: function () { a.splice(Math.min(i, a.length), 0, x); rebuild(); updateExtras(); touch(); } });
+          var a = o.arr(), i = a.indexOf(x); if (i < 0) return; a.splice(i, 1); if (o.onRemove) o.onRemove(x); rebuild(); updateExtras(); touch();
+          toast('Removed ' + (x.name || 'row'), { label: 'Undo', run: function () { a.splice(Math.min(i, a.length), 0, x); if (o.onRestore) o.onRestore(x); rebuild(); updateExtras(); touch(); } });
         } }));
         box.append(el('div', { class: 'hrow grow', style: tpl, 'data-id': x.id }, cells));
       });
@@ -1119,7 +1129,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
       crypto: S.crypto.map(function (c) { return { name: c.name, value: R(c.value), monthly_buy: R(c.dca), assumed_return_pct: c.ret }; }),
       debts: S.debts.map(function (d) { var e = d.est || []; return { name: d.name, type: d.type, rate_pct: d.rate, rate_is_estimate: e.indexOf('rate') >= 0, balance: R(d.balance), emi_per_month: R(d.emi), emi_is_estimate: e.indexOf('emi') >= 0, card_limit: d.limit > 0 ? R(d.limit) : undefined, overdue_amount: d.od > 0 ? R(d.od) : undefined }; }),
       credit: { score: S.cibil.score || null, as_of: S.cibil.date || null, card_utilisation_pct: S.cibil.util, enquiries_last_2_years: S.cibil.enq, late_payment_months: S.cibil.missed },
-      insurance: S.ins.map(function (p) { return { name: p.name, type: p.type, cover: R(p.cover), premium_per_year: R(p.premium), renews: p.renews || null }; })
+      insurance: S.ins.map(function (p) { return { name: p.name, type: p.type, cover: R(p.cover), premium_per_year: R(p.premium), renews: p.renews || null, summary: p.details && p.details.summary || undefined }; })
     };
   }
   var ASK_SYSTEM = 'You are the money assistant inside one person\'s personal wealth dashboard in India. The JSON below is their current dashboard data; amounts are in rupees. Use it and do not invent figures. Show the arithmetic briefly. Use Indian conventions (₹, lakh, crore). If a rate or EMI is marked as an estimate, say the answer depends on it and tell them to enter the real figure. If an important fact is missing (for example whether they pay cards in full), state your assumption or ask one short question. Be concise: short paragraphs or a few bullets, no headings. You are not a licensed adviser: give the numbers and the trade-offs, not guarantees, and mention prepayment charges, tax or lock-ins when they matter. If sample_data is true, say the numbers are sample data. Never ask for PAN, account numbers or passwords.\n\nDASHBOARD DATA:\n';
@@ -1150,47 +1160,200 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     });
     return box;
   }
+  var ASK_DEBT = ['I have ₹1,54,000 spare. How should I use it?', 'Which debt should I clear first?', 'How fast can I be debt-free?', 'Should I consolidate these loans?'];
   function renderChat() {
-    var log = $('#chat-log'); if (!log) return; log.replaceChildren();
-    if (!CHAT.length) log.append(el('p', { class: 'note', text: 'Ask anything about your money. I read the numbers on your dashboard each time you ask.' }));
-    CHAT.forEach(function (m) {
-      if (m.role === 'user') log.append(el('div', { class: 'msg user', text: m.content }));
-      else if (m.role === 'assistant') log.append(el('div', { class: 'msg bot' }, mdLite(m.content)));
-      else log.append(el('div', { class: 'msg err', text: m.content }));
+    document.querySelectorAll('.chat-log').forEach(function (log) {
+      log.replaceChildren();
+      if (!CHAT.length) log.append(el('p', { class: 'note', text: 'Ask anything about your money. I read the numbers on your dashboard each time you ask.' }));
+      CHAT.forEach(function (m) {
+        if (m.role === 'user') log.append(el('div', { class: 'msg user', text: m.content }));
+        else if (m.role === 'assistant') log.append(el('div', { class: 'msg bot' }, mdLite(m.content)));
+        else log.append(el('div', { class: 'msg err', text: m.content }));
+      });
+      if (CHAT_BUSY) log.append(el('div', { class: 'msg bot', text: 'Thinking…' }));
+      log.hidden = !CHAT.length && !CHAT_BUSY; log.scrollTop = log.scrollHeight;
     });
-    if (CHAT_BUSY) log.append(el('div', { class: 'msg bot', text: 'Thinking…' }));
-    log.scrollTop = log.scrollHeight;
-    var b = $('#chat-send'); if (b) b.disabled = CHAT_BUSY;
+    document.querySelectorAll('.chat-send').forEach(function (b) { b.disabled = CHAT_BUSY; });
   }
   function sendChat(q) {
     q = (q || '').trim(); if (!q || CHAT_BUSY) return; CHAT.push({ role: 'user', content: q }); CHAT_BUSY = true; renderChat();
     claudeAsk().then(function (t) { CHAT.push({ role: 'assistant', content: t }); }).catch(function (e) { CHAT.push({ role: 'error', content: (e && e.message) || 'Something went wrong.' }); })
       .then(function () { CHAT_BUSY = false; renderChat(); });
   }
-  function buildAsk() {
-    var v = $('#view-ask'); if (!v) return; v.replaceChildren();
-    var key = S.settings.anthropic_key;
-    if (!key) {
-      var inp = el('input', { class: 'in', type: 'password', autocomplete: 'off', placeholder: 'sk-ant-…', 'aria-label': 'Claude API key', id: 'akey' }), msg = el('p', { class: 'note warn', id: 'akey-msg', hidden: true });
-      v.append(el('div', { class: 'hero' }, el('p', { class: 'eyebrow', text: 'Ask' }), el('div', { class: 'bignum', text: 'Ask Claude' }), el('p', { class: 'delta', text: 'About your own numbers' })),
-        el('div', { class: 'card' }, el('header', null, el('div', null, el('h2', { text: 'Connect your Claude key' }), el('p', { class: 'sub', text: 'Questions are answered by Claude using your own Anthropic API key. The key is saved in your private database (only your login can read it) and is sent only to Anthropic. Create one at console.anthropic.com under API keys. Each question costs a few cents.' }))),
-          el('div', { class: 'fgrid' }, el('label', { class: 'fld' }, el('span', { text: 'API key' }), inp)),
-          msg, el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Save key', onclick: function () {
-            var k = inp.value.trim(); if (!/^sk-ant-/.test(k)) { msg.textContent = 'That does not look like an Anthropic key. It starts with sk-ant-.'; msg.hidden = false; return; }
-            S.settings.anthropic_key = k; touch(); buildAsk(); } }))));
-      return;
-    }
-    var ta = el('textarea', { class: 'in chat-in', rows: '2', placeholder: 'Ask about your money…', 'aria-label': 'Your question', id: 'chat-in' });
+  function connectCard(title, sub) {
+    var inp = el('input', { class: 'in akey', type: 'password', autocomplete: 'off', placeholder: 'sk-ant-…', 'aria-label': 'Claude API key' }), msg = el('p', { class: 'note warn akey-msg', hidden: true });
+    return el('div', { class: 'card' }, el('header', null, el('div', null, el('h2', { text: title }), el('p', { class: 'sub', text: (sub || 'To ask questions, connect your own Anthropic API key.') + ' Create one at console.anthropic.com under API keys. Each question costs a few cents.' }))),
+      el('div', { class: 'fgrid' }, el('label', { class: 'fld' }, el('span', { text: 'Claude API key' }), inp)), msg,
+      el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Save key', onclick: function () {
+        var k = inp.value.trim(); if (!/^sk-ant-/.test(k)) { msg.textContent = 'That does not look like an Anthropic key. It starts with sk-ant-.'; msg.hidden = false; return; }
+        S.settings.anthropic_key = k; touch(); renderAll(); } })));
+  }
+  function askPanel(title, sub, ideas) {
+    var key = S.settings.anthropic_key, head = el('header', null, el('div', null, el('h2', { text: title }), el('p', { class: 'sub', text: sub })));
+    if (!key) return connectCard(title, 'To ask questions, connect your own Anthropic API key. It is saved in your private database (only your login can read it) and is sent only to Anthropic.');
+    var ta = el('textarea', { class: 'in chat-in', rows: '2', placeholder: 'Ask about your money…', 'aria-label': 'Your question' });
     function go() { var q = ta.value; if (!q.trim() || CHAT_BUSY) return; ta.value = ''; sendChat(q); }
     ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && window.matchMedia('(hover: hover)').matches) { e.preventDefault(); go(); } });
-    v.append(el('div', { class: 'hero' }, el('p', { class: 'eyebrow', text: 'Ask' }), el('div', { class: 'bignum', text: 'Ask Claude' }), el('p', { class: 'delta', text: 'Answers use the numbers on your dashboard' })),
-      el('div', { class: 'card' }, el('header', null, el('div', null, el('h2', { text: 'Your questions' }), el('p', { class: 'sub', text: 'Not licensed financial advice. Your dashboard numbers are sent to Anthropic when you ask. Nothing else is shared.' }))),
-        el('div', { class: 'chips' }, ASK_IDEAS.map(function (q) { return el('button', { class: 'btn tint sm', type: 'button', text: q, onclick: function () { sendChat(q); } }); })),
-        el('div', { class: 'chat-log', id: 'chat-log', role: 'log', 'aria-live': 'polite' }),
-        el('div', { class: 'chat-bar' }, ta, el('button', { class: 'btn', type: 'button', id: 'chat-send', text: 'Send', onclick: go }))),
-      el('p', { class: 'note' }, 'Key saved (…' + key.slice(-4) + '). ', el('button', { class: 'linkbtn', type: 'button', text: 'Remove key', onclick: function () { S.settings.anthropic_key = ''; touch(); buildAsk(); } }), CHAT.length ? ' ' : '', CHAT.length ? el('button', { class: 'linkbtn', type: 'button', text: 'Clear chat', onclick: function () { CHAT = []; renderChat(); } }) : ''));
+    return el('div', { class: 'card' }, head,
+      el('div', { class: 'chips' }, ideas.map(function (q) { return el('button', { class: 'btn tint sm', type: 'button', text: q, onclick: function () { sendChat(q); } }); })),
+      el('div', { class: 'chat-log', role: 'log', 'aria-live': 'polite', hidden: true }),
+      el('div', { class: 'chat-bar' }, ta, el('button', { class: 'btn chat-send', type: 'button', text: 'Send', onclick: go })),
+      el('p', { class: 'note ask-foot' }, 'Key saved (…' + key.slice(-4) + '). ', el('button', { class: 'linkbtn', type: 'button', text: 'Remove key', onclick: function () { S.settings.anthropic_key = ''; touch(); buildAsk(); } }), ' ', el('button', { class: 'linkbtn', type: 'button', text: 'Clear chat', onclick: function () { CHAT = []; renderChat(); } })));
+  }
+  function buildAsk() {
+    var v = $('#view-ask'), d = $('#db-ask');
+    if (d) { d.replaceChildren(askPanel('Ask about your debt', 'Ask Claude what to do next. It reads the loans and cards below. Not licensed financial advice.', ASK_DEBT)); }
+    if (v) { v.replaceChildren(el('div', { class: 'hero' }, el('p', { class: 'eyebrow', text: 'Ask' }), el('div', { class: 'bignum', text: 'Ask Claude' }), el('p', { class: 'delta', text: 'Answers use the numbers on your dashboard' })),
+      askPanel('Your questions', 'Not licensed financial advice. Your dashboard numbers are sent to Anthropic when you ask. Nothing else is shared.', ASK_IDEAS)); }
     renderChat();
   }
+  /* ---- Insurance: read a policy document, details panel, and a chat about it ---- */
+  var DOCS = {}, INS_SEL = null, INS_TARGET = null, POLCHAT = {}, POL_BUSY = false, INS_BUSY = '';
+  var DOC_CAP = 600000;
+  var INS_SYSTEM = 'You read one insurance policy document (India) and return its details as JSON only, with no other text. Use null for anything the document does not state, and never guess. Money is a plain number in rupees. Dates are YYYY-MM-DD. annual_premium is the total yearly premium: if it is paid monthly, quarterly or half-yearly, multiply up to a year. Keep every string short and plain. Do not include names, addresses, dates of birth or nominee names. The text may combine several documents marked === DOCUMENT: name ===, such as a policy certificate and the terms and conditions: use them together. Keys: insurer; product_name; policy_type (one of "Term life","Health","Motor","Home","Travel","Endowment / ULIP","Other"); policy_number_last4; insured (who is covered, by relationship and count only); sum_insured; annual_premium; premium_mode; policy_start; policy_end; next_due_date; policy_term_years; premium_paying_term_years; grace_period_days; free_look_days; waiting_periods [{what, period}]; covered [strings]; not_covered [strings]; riders [{name, benefit}]; limits [{item, limit}] (sub-limits, room rent, caps); co_pay; deductible; claim_process; cashless; maturity_or_surrender; tax_benefit; key_conditions [strings]; watch_out [strings: terms a buyer commonly misses or that could reduce a claim]; summary (3 to 5 sentences in plain English).';
+  var POL_SYSTEM = 'You answer questions about one insurance policy for its holder in India. Answer only from the policy document text below. The text has [Page n] markers: cite the page or section when you can. If the document does not say, say so plainly and suggest asking the insurer; never guess. Explain jargon simply. Be concise: short paragraphs or a few bullets, no headings. This is not legal advice, and claim decisions are the insurer\'s. Use ₹ and Indian number style. Never ask for personal identifiers.';
+  function claudeRaw(system, messages, maxTokens) {
+    var key = S.settings.anthropic_key; if (!key) return Promise.reject({ message: 'Add your Claude API key first.' });
+    return fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: maxTokens || 1500, system: system, messages: messages }) })
+      .catch(function () { throw { message: 'Could not reach Claude. Check your internet connection.' }; })
+      .then(function (res) { return res.json().catch(function () { return {}; }).then(function (j) {
+        if (!res.ok) {
+          var m = (j && j.error && j.error.message) || '';
+          if (/credit balance/i.test(m)) throw { message: 'Your Claude API credit has run out. Top up at console.anthropic.com under Settings, Billing.' };
+          if (/too long|prompt is too|maximum.*tokens/i.test(m)) throw { message: 'This document is too long for Claude to read in one go.' };
+          throw { message: res.status === 401 ? 'Claude rejected the API key. Remove it and add it again.' : res.status === 429 ? 'Claude is rate-limiting this key. Wait a minute and try again.' : res.status === 529 ? 'Claude is busy right now. Try again in a minute.' : (m || 'Claude error ' + res.status) };
+        }
+        return { text: (j.content || []).filter(function (b) { return b.type === 'text'; }).map(function (b) { return b.text; }).join(''), cut: j.stop_reason === 'max_tokens' };
+      }); });
+  }
+  function looseJson(t) {
+    try { return JSON.parse(t); } catch (e) {}
+    var f = /```(?:json)?\s*([\s\S]*?)```/.exec(t); if (f) { try { return JSON.parse(f[1]); } catch (e) {} }
+    var a = t.indexOf('{'), b = t.lastIndexOf('}'); if (a >= 0 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch (e) {} }
+    return null;
+  }
+  function readPdfText(file) {
+    return loadPdfJs().then(function (lib) { return file.arrayBuffer().then(function (buf) { return lib.getDocument({ data: new Uint8Array(buf) }).promise; }); }).then(function (doc) {
+      var out = [], p = Promise.resolve();
+      for (var i = 1; i <= doc.numPages; i++) (function (n) { p = p.then(function () { return doc.getPage(n).then(function (pg) { return pg.getTextContent().then(function (tc) { out.push('[Page ' + n + ']\n' + buildLines(tc.items, pg.view[2]).join('\n')); }); }); }); })(i);
+      return p.then(function () { return { text: out.join('\n\n'), pages: doc.numPages }; });
+    });
+  }
+  function saveDoc(id, name, text) {
+    DOCS[id] = text; if (!SB || !USER) return Promise.resolve({ saved: false });
+    return SB.from('wealth_policy_docs').upsert({ user_id: USER.id, id: id, name: name, text: text, updated_at: new Date().toISOString() }, { onConflict: 'user_id,id' })
+      .then(function (r) { return { saved: !r.error, error: r.error }; }, function (e) { return { saved: false, error: e }; });
+  }
+  function getDoc(id) {
+    if (DOCS[id]) return Promise.resolve(DOCS[id]);
+    if (!SB || !USER) return Promise.resolve('');
+    return SB.from('wealth_policy_docs').select('text').eq('id', id).maybeSingle().then(function (r) { var t = r && r.data && r.data.text || ''; if (t) DOCS[id] = t; return t; }, function () { return ''; });
+  }
+  function dropDoc(id) { var t = DOCS[id]; delete DOCS[id]; if (SB && USER) SB.from('wealth_policy_docs').delete().eq('id', id).then(function () {}, function () {}); return t; }
+  function numOr0(v) { v = Number(v); return isFinite(v) ? Math.round(v) : 0; }
+  function isoOk(s) { return /^\d{4}-\d{2}-\d{2}$/.test(s || '') ? s : ''; }
+  function fillPolicy(x, j, doc) {
+    var type = INS_TYPES.indexOf(j.policy_type) >= 0 ? j.policy_type : 'Other';
+    x.name = j.product_name || x.name || ((j.insurer || 'Policy') + ' ' + type); x.insurer = j.insurer || x.insurer || ''; x.type = type;
+    x.cover = numOr0(j.sum_insured); x.premium = numOr0(j.annual_premium); x.renews = isoOk(j.next_due_date) || isoOk(j.policy_end) || x.renews || '';
+    x.details = j; x.doc = doc; return x;
+  }
+  function ingestPolicy(files, target, mode, status) {
+    if (INS_BUSY) return; files = Array.prototype.slice.call(files || []);
+    var bad = files.filter(function (f) { return !/\.pdf$/i.test(f.name) && f.type !== 'application/pdf'; }); if (!files.length || bad.length) { toast('Please choose policy PDFs only.'); return; }
+    function say(t, warn) { INS_BUSY = (t && !warn) ? 'busy' : ''; status.replaceChildren(t ? el('p', { class: 'note' + (warn ? ' warn' : ''), text: t }) : ''); }
+    say('Reading ' + (files.length > 1 ? files.length + ' documents' : files[0].name) + ' on this device…');
+    var texts = [], pages = 0, p = Promise.resolve();
+    files.forEach(function (f) { p = p.then(function () { return readPdfText(f); }).then(function (r) { texts.push('=== DOCUMENT: ' + f.name + ' ===\n' + r.text); pages += r.pages; }); });
+    p.then(function () {
+      var plain = texts.join('').replace(/\[Page \d+\]/g, '').replace(/=== DOCUMENT:[^\n]*===/g, '').replace(/\s+/g, ' ').trim();
+      if (plain.length < 500) throw { message: 'This PDF has almost no readable text. It may be a scan or photo. Download the text version of the policy from your insurer and try again.' };
+      return (mode === 'add' && target && target.doc ? getDoc(target.doc.id) : Promise.resolve('')).then(function (old) {
+        var all = (old ? old + '\n\n' : '') + texts.join('\n\n'), truncated = all.length > DOC_CAP, text = truncated ? all.slice(0, DOC_CAP) : all;
+        var names = (mode === 'add' && target && target.doc && target.doc.files ? target.doc.files : []).concat(files.map(function (f) { return f.name; })), pg = (mode === 'add' && target && target.doc ? target.doc.pages || 0 : 0) + pages;
+        say('Claude is reading the policy (' + pg + ' pages). This takes up to a minute…');
+        return claudeRaw(INS_SYSTEM, [{ role: 'user', content: 'POLICY DOCUMENT TEXT:\n' + text }], 3500).then(function (a) {
+          var j = looseJson(a.text); if (!j || typeof j !== 'object') throw { message: 'Claude could not turn this document into details. Try again, or add the policy by hand.' };
+          var docId = target && target.doc ? target.doc.id : uid(), doc = { id: docId, files: names, chars: text.length, pages: pg, truncated: truncated, at: today() };
+          var x = target || { id: uid(), name: '', insurer: '', type: 'Other', cover: 0, premium: 0, renews: '' };
+          fillPolicy(x, j, doc); if (!target) S.ins.push(x);
+          return saveDoc(docId, x.name, text).then(function (sv) { x.doc.saved = !!sv.saved; touch(); INS_SEL = x.id; INS_BUSY = ''; renderAll(); setTimeout(function () { var d = $('#ins-detail'); if (d && d.scrollIntoView) d.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+            toast(sv.saved ? 'Policy read. Check the key figures against your document.' : 'Policy read, but the document text was not saved. Run the new SQL in Supabase to enable chat later.'); });
+        });
+      });
+    }).catch(function (e) { say((e && e.message) || 'Could not read this PDF.', true); });
+  }
+  function insUploadCard() {
+    if (!S.settings.anthropic_key) return connectCard('Read a policy document', 'Upload a policy PDF and Claude fills in its cover, premium, waiting periods and exclusions, and you can ask it questions. This needs your own Anthropic API key. It is saved in your private database and sent only to Anthropic.');
+    var inp = el('input', { type: 'file', accept: 'application/pdf,.pdf', multiple: true, style: 'display:none', id: 'ins-file' }), status = el('div', { id: 'ins-status' });
+    inp.addEventListener('change', function () { var fs = inp.files ? Array.prototype.slice.call(inp.files) : []; inp.value = ''; if (fs.length) { var t = INS_TARGET; INS_TARGET = null; ingestPolicy(fs, t, 'new', status); } });
+    return el('div', { class: 'card' }, el('header', null, el('div', null, el('h2', { text: 'Add a policy from its documents' }), el('p', { class: 'sub', text: 'Upload the policy PDF. If the policy comes as several files, such as a certificate and the terms and conditions, select them all together. They are read on this device, then the text goes to Claude with your key (a few cents per policy). The text is kept in your private database so you can ask questions later.' }))),
+      el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Choose policy PDF(s)', onclick: function () { INS_TARGET = null; inp.click(); } }), inp), el('div', { class: 'pad' }, status));
+  }
+  function kvRow(k, v) { return (v == null || v === '' || (Array.isArray(v) && !v.length)) ? null : el('div', { class: 'kv' }, el('span', { class: 'kk', text: k }), el('span', { class: 'kvv', text: v })); }
+  function listBlock(title, arr, fmt) { arr = (arr || []).filter(Boolean); if (!arr.length) return null; return el('div', { class: 'blk' }, el('h3', { text: title }), el('ul', null, arr.map(function (x) { return el('li', { text: fmt ? fmt(x) : String(x) }); }))); }
+  function yrs(n) { return n ? n + (n === 1 ? ' year' : ' years') : null; }
+  function renderInsDetail() {
+    var host = $('#ins-detail'); if (!host) return; host.replaceChildren();
+    var x = S.ins.filter(function (p) { return p.id === INS_SEL; })[0]; if (!x) return;
+    var d = x.details || {}, kv = [kvRow('Insurer', x.insurer), kvRow('Type', x.type), kvRow('Covers', d.insured), kvRow('Cover amount', x.cover ? rs(x.cover) : null), kvRow('Premium', x.premium ? rs(x.premium) + ' a year' + (d.premium_mode ? ' (paid ' + d.premium_mode + ')' : '') : null),
+      kvRow('Policy starts', d.policy_start ? dmy(d.policy_start) : null), kvRow('Policy ends', d.policy_end ? dmy(d.policy_end) : null), kvRow('Next premium due', d.next_due_date ? dmy(d.next_due_date) : null), kvRow('Policy term', yrs(d.policy_term_years)), kvRow('Pay premium for', yrs(d.premium_paying_term_years)),
+      kvRow('Grace period', d.grace_period_days ? d.grace_period_days + ' days' : null), kvRow('Free-look period', d.free_look_days ? d.free_look_days + ' days' : null), kvRow('Co-pay', d.co_pay), kvRow('Deductible', d.deductible), kvRow('Policy number', d.policy_number_last4 ? 'ending ' + d.policy_number_last4 : null)].filter(Boolean);
+    var blocks = [listBlock('What is covered', d.covered), listBlock('What is not covered', d.not_covered), listBlock('Waiting periods', d.waiting_periods, function (w) { return typeof w === 'string' ? w : (w.what || '') + (w.period ? ': ' + w.period : ''); }),
+      listBlock('Limits and caps', d.limits, function (w) { return typeof w === 'string' ? w : (w.item || '') + (w.limit ? ': ' + w.limit : ''); }), listBlock('Riders and add-ons', d.riders, function (w) { return typeof w === 'string' ? w : (w.name || '') + (w.benefit ? ': ' + w.benefit : ''); }),
+      listBlock('Important conditions', d.key_conditions), listBlock('Worth checking', d.watch_out)].filter(Boolean);
+    var extra = [kvRow('How to claim', d.claim_process), kvRow('Cashless', d.cashless), kvRow('At maturity or surrender', d.maturity_or_surrender), kvRow('Tax benefit', d.tax_benefit)].filter(Boolean);
+    var file = el('input', { type: 'file', accept: 'application/pdf,.pdf', multiple: true, style: 'display:none' }), file2 = el('input', { type: 'file', accept: 'application/pdf,.pdf', multiple: true, style: 'display:none' }), st = el('div');
+    file.addEventListener('change', function () { var fs = file.files ? Array.prototype.slice.call(file.files) : []; file.value = ''; if (fs.length) ingestPolicy(fs, x, x.doc ? 'replace' : 'new', st); });
+    file2.addEventListener('change', function () { var fs = file2.files ? Array.prototype.slice.call(file2.files) : []; file2.value = ''; if (fs.length) ingestPolicy(fs, x, 'add', st); });
+    host.append(el('div', { class: 'card ins-detail-card' }, el('header', null, el('div', null, el('h2', { text: x.name || 'Policy' }), el('p', { class: 'sub', text: x.details ? 'Read by Claude from your document. Check key figures against the document itself.' : 'No document yet. Upload the policy PDF to fill this in.' }))),
+      el('div', { class: 'pad' }, d.summary ? el('p', { class: 'psum', text: d.summary }) : null, kv.length ? el('div', { class: 'kvgrid' }, kv) : null, extra.length ? el('div', { class: 'kvgrid one' }, extra) : null, blocks,
+        x.doc && x.doc.files && x.doc.files.length ? el('p', { class: 'note', text: 'Documents read: ' + x.doc.files.join(', ') + ' (' + (x.doc.pages || '?') + ' pages).' }) : null,
+        x.doc && x.doc.truncated ? el('p', { class: 'note warn', text: 'The documents were very long, so only the first part was read.' }) : null,
+        x.doc && x.doc.saved === false ? el('p', { class: 'note warn', text: 'The document text was not saved, so questions only work until you leave this page. Run the new SQL in Supabase.' }) : null,
+        el('div', { class: 'actions' }, x.doc ? el('button', { class: 'btn tint', type: 'button', text: 'Add another document', onclick: function () { file2.click(); } }) : null, file2, el('button', { class: 'btn tint', type: 'button', text: x.doc ? 'Replace documents' : 'Upload document', onclick: function () { file.click(); } }), file,
+          x.doc ? el('button', { class: 'btn tint', type: 'button', text: 'Remove document text', onclick: function () { dropDoc(x.doc.id); x.doc = null; touch(); renderInsDetail(); toast('Document text removed. The details above stay.'); } }) : null,
+          el('button', { class: 'btn tint', type: 'button', text: 'Close', onclick: function () { INS_SEL = null; renderInsDetail(); } })), st),
+      x.doc ? polChatBlock(x) : el('div', { class: 'pad' }, el('p', { class: 'note', text: 'Upload the policy document to ask questions about it.' }))));
+  }
+  var POL_IDEAS = ['What is not covered?', 'How do I make a claim?', 'What happens if I miss a premium?', 'Explain the waiting periods', 'What should I check before renewing?'];
+  function polChatBlock(x) {
+    var ta = el('textarea', { class: 'in chat-in', rows: '2', placeholder: 'Ask about this policy…', 'aria-label': 'Question about this policy' });
+    function go() { var q = ta.value; if (!q.trim() || POL_BUSY) return; ta.value = ''; sendPol(x, q); }
+    ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && window.matchMedia('(hover: hover)').matches) { e.preventDefault(); go(); } });
+    var blk = el('div', { class: 'polchat' }, el('div', { class: 'pad' }, el('h3', { class: 'ph0', text: 'Ask about this policy' }), el('p', { class: 'sub', text: 'Answers come from the document text. Not legal or financial advice.' })),
+      el('div', { class: 'chips' }, POL_IDEAS.map(function (q) { return el('button', { class: 'btn tint sm', type: 'button', text: q, onclick: function () { sendPol(x, q); } }); })),
+      el('div', { class: 'chat-log pchat-log', role: 'log', 'aria-live': 'polite', hidden: true }), el('div', { class: 'chat-bar' }, ta, el('button', { class: 'btn pchat-send', type: 'button', text: 'Send', onclick: go })));
+    setTimeout(function () { renderPol(x.id); }, 0); return blk;
+  }
+  function renderPol(id) {
+    var log = document.querySelector('.pchat-log'); if (!log) return; var h = POLCHAT[id] || []; log.replaceChildren();
+    h.forEach(function (m) { if (m.role === 'user') log.append(el('div', { class: 'msg user', text: m.content })); else if (m.role === 'assistant') log.append(el('div', { class: 'msg bot' }, mdLite(m.content))); else log.append(el('div', { class: 'msg err', text: m.content })); });
+    if (POL_BUSY) log.append(el('div', { class: 'msg bot', text: 'Reading the policy…' }));
+    log.hidden = !h.length && !POL_BUSY; log.scrollTop = log.scrollHeight; var b = document.querySelector('.pchat-send'); if (b) b.disabled = POL_BUSY;
+  }
+  function sendPol(x, q) {
+    q = (q || '').trim(); if (!q || POL_BUSY) return; var h = POLCHAT[x.id] = POLCHAT[x.id] || []; h.push({ role: 'user', content: q }); POL_BUSY = true; renderPol(x.id);
+    getDoc(x.doc.id).then(function (text) {
+      if (!text) throw { message: 'The document text is not available. Upload the policy again with Replace documents.' };
+      var msgs = []; h.forEach(function (m) { if (m.role !== 'user' && m.role !== 'assistant') return; var l = msgs[msgs.length - 1]; if (l && l.role === m.role) l.content += '\n\n' + m.content; else msgs.push({ role: m.role, content: m.content }); });
+      msgs = msgs.slice(-12); while (msgs.length && msgs[0].role !== 'user') msgs.shift();
+      var sys = [{ type: 'text', text: POL_SYSTEM + '\n\nEXTRACTED SUMMARY (may contain mistakes; the document text is the source of truth):\n' + JSON.stringify(x.details || {}) }, { type: 'text', text: 'POLICY DOCUMENT TEXT:\n' + text, cache_control: { type: 'ephemeral' } }];
+      return claudeRaw(sys, msgs, 1200);
+    }).then(function (a) { h.push({ role: 'assistant', content: a.text + (a.cut ? '\n\n(The answer was cut off. Ask me to continue.)' : '') }); }).catch(function (e) { h.push({ role: 'error', content: (e && e.message) || 'Something went wrong.' }); })
+      .then(function () { POL_BUSY = false; renderPol(x.id); });
+  }
+  function insRowButtons() {
+    S.ins.forEach(function (x) {
+      var cell = document.querySelector('#in-rows .hrow[data-id="' + x.id + '"] .c-name'); if (!cell) return;
+      var old = cell.querySelector('.rowbtns'); if (old) old.remove();
+      cell.append(el('div', { class: 'flags rowbtns' }, el('button', { class: 'linkbtn', type: 'button', text: x.details ? (INS_SEL === x.id ? 'Showing details' : 'View details') : 'Add document', onclick: function () { INS_SEL = x.id; renderInsDetail(); insRowButtons(); var d = $('#ins-detail'); if (d && d.scrollIntoView) d.scrollIntoView({ behavior: 'smooth', block: 'start' }); } })));
+    });
+  }
+  var REMOVED = {};
+  function insOnRemove(x) { if (x.doc) { REMOVED[x.id] = dropDoc(x.doc.id); } if (INS_SEL === x.id) { INS_SEL = null; renderInsDetail(); } }
+  function insOnRestore(x) { if (x.doc && REMOVED[x.id]) { saveDoc(x.doc.id, x.name, REMOVED[x.id]); delete REMOVED[x.id]; } }
   /* ---- CIBIL upload ---- */
   var PDFJS_V = '3.11.174', PDFJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/' + PDFJS_V + '/';
   var cibilPending = null;
@@ -1204,14 +1367,34 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     });
   }
 // Rebuild physical lines from pdf.js text items; wide gaps become 2+ spaces (like pdftotext -layout)
-  function buildLines(items){
-    var rows={};
-    items.forEach(function(i){ if(!i.str||!i.str.trim()&&i.str==='') return; var y=Math.round(i.transform[5]/3); (rows[y]=rows[y]||[]).push(i); });
-    return Object.keys(rows).map(Number).sort(function(a,b){return b-a;}).map(function(y){
-      var r=rows[y].sort(function(a,b){return a.transform[4]-b.transform[4];}), s='', end=null;
-      r.forEach(function(i){ var x=i.transform[4]; if(end!==null){ var gap=x-end; if(gap>6) s=s.replace(/ +$/,'')+'  '; } s+=i.str; end=x+i.width; });
-      return s.replace(/\s+$/,'');
-    }).filter(function(l){return l.trim();});
+  // Rebuild physical lines from pdf.js text items; wide gaps become 2+ spaces (like pdftotext -layout).
+  // With a page width, two-column text pages are read left column first, then right column.
+  function buildLines(items, W){
+    function rowsOf(list){
+      var rows={};
+      list.forEach(function(i){ if(!i.str||!i.str.trim()&&i.str==='') return; var y=Math.round(i.transform[5]/3); (rows[y]=rows[y]||[]).push(i); });
+      return Object.keys(rows).map(Number).sort(function(a,b){return b-a;}).map(function(y){
+        var r=rows[y].sort(function(a,b){return a.transform[4]-b.transform[4];}), s='', end=null;
+        r.forEach(function(i){ var x=i.transform[4]; if(end!==null){ var gap=x-end; if(gap>6) s=s.replace(/ +$/,'')+'  '; } s+=i.str; end=x+i.width; });
+        return s.replace(/\s+$/,'');
+      }).filter(function(l){return l.trim();});
+    }
+    if(W){
+      var T=items.filter(function(i){return i.str&&i.str.trim();});
+      if(T.length>=80){
+        var best=null;
+        for(var gx=W*0.38; gx<=W*0.62; gx+=2){
+          var cross=0; T.forEach(function(i){ var x0=i.transform[4], x1=x0+i.width; if(x0<gx&&x1>gx) cross++; });
+          if(cross<=T.length*0.03 && (!best||cross<best.c)) best={gx:gx,c:cross};
+        }
+        if(best){
+          var L=[],R=[]; T.forEach(function(i){ (i.transform[4]<best.gx?L:R).push(i); });
+          var ll=rowsOf(L), rl=rowsOf(R), avg=function(a){return a.reduce(function(t,x){return t+x.length;},0)/Math.max(1,a.length);};
+          if(ll.length>=20&&rl.length>=20&&avg(ll)>=35&&avg(rl)>=35) return ll.concat(rl);
+        }
+      }
+    }
+    return rowsOf(items);
   }
   
 // CIBIL report reader. Input: array of text lines (see lines.js). Output: numbers only, no identifiers.
@@ -1366,7 +1549,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
         cols: [{ k: 'value', label: 'Value today', type: 'money', min: 0 }, { k: 'dca', label: 'Monthly buy', type: 'money', min: 0 }, { k: 'ret', label: 'Return % / yr', type: 'pct', min: 0, max: 40 }],
         derived: { label: 'In ' + S.horizon + ' yrs' }, make: function () { return { id: uid(), name: 'Bitcoin', value: 0, dca: 0, ret: 20 }; } }),
       note('Returns here are your guesses and are capped at 40%. Crypto is very volatile, so many planners keep it to 5% of net worth or less. Profits are taxed at a flat 30% in India plus 1% TDS on sales.'));
-    var db = $('#view-debt'); db.replaceChildren(heroEl('db', 'Total debt'), el('div', { class: 'tiles', id: 'db-tiles' }), el('div', { class: 'card', id: 'db-tips' }), cibilCard('cibd'),
+    var db = $('#view-debt'); db.replaceChildren(heroEl('db', 'Total debt'), el('div', { class: 'tiles', id: 'db-tiles' }), el('div', { id: 'db-ask' }), el('div', { class: 'card', id: 'db-tips' }), cibilCard('cibd'),
       listCard({ id: 'db', title: 'Loans and cards', nameLabel: 'Lender', arr: function () { return S.debts; }, empty: 'No loans or card balances. Add one to see when you will be debt-free.', addLabel: 'Add a loan',
         cols: [{ k: 'type', label: 'Type', type: 'select', opts: DEBT_TYPES }, { k: 'rate', label: 'Rate % / yr', type: 'pct', min: 0, max: 60 }, { k: 'balance', label: 'Outstanding', type: 'money', min: 0 }, { k: 'emi', label: 'EMI / month', type: 'money', min: 0 }, { k: 'limit', label: 'Card limit', type: 'money', min: 0 }],
         derived: { label: 'Debt-free in' }, make: function () { return { id: uid(), name: 'New loan', type: 'Personal loan', rate: 12, balance: 0, emi: 0, limit: 0 }; } }),
@@ -1377,11 +1560,11 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
         { k: 'score', label: 'Score (300 to 900)', type: 'int', min: 0, max: 900 }, { k: 'date', label: 'As of', type: 'date' }, { k: 'util', label: 'Card utilisation %', type: 'pct', min: 0, max: 100 }, { k: 'enq', label: 'Enquiries, last 2 yrs', type: 'int', min: 0 }, { k: 'missed', label: 'Missed payments', type: 'int', min: 0 }]),
       el('div', { class: 'addrow solo' }, el('button', { class: 'btn tint', type: 'button', text: 'Save this reading to history', onclick: saveReading })),
       chartCard('cbc', 'Score history', ''), el('div', { class: 'card', id: 'cb-plan' }));
-    var ins = $('#view-insurance'); ins.replaceChildren(heroEl('in', 'Life cover'), el('div', { class: 'tiles', id: 'in-tiles' }), el('div', { id: 'in-gap' }),
-      listCard({ id: 'in', title: 'Policies', nameLabel: 'Policy', arr: function () { return S.ins; }, empty: 'No policies yet. Add your term, health and motor cover.', addLabel: 'Add a policy',
+    var ins = $('#view-insurance'); ins.replaceChildren(heroEl('in', 'Life cover'), el('div', { class: 'tiles', id: 'in-tiles' }), el('div', { id: 'in-gap' }), insUploadCard(), el('div', { id: 'ins-detail' }),
+      listCard({ id: 'in', onRemove: insOnRemove, onRestore: insOnRestore, title: 'Policies', nameLabel: 'Policy', arr: function () { return S.ins; }, empty: 'No policies yet. Add your term, health and motor cover.', addLabel: 'Add a policy',
         cols: [{ k: 'insurer', label: 'Insurer', type: 'text' }, { k: 'type', label: 'Type', type: 'select', opts: INS_TYPES }, { k: 'cover', label: 'Cover', type: 'money', min: 0 }, { k: 'premium', label: 'Premium / yr', type: 'money', min: 0 }, { k: 'renews', label: 'Renews on', type: 'date' }],
         derived: { label: 'Status' }, make: function () { return { id: uid(), name: 'New policy', insurer: '', type: 'Term life', cover: 0, premium: 0, renews: '' }; } }));
-    buildAsk(); syncControls(); updateExtras();
+    buildAsk(); renderInsDetail(); syncControls(); updateExtras();
   }
   function saveReading() {
     var c = S.cibil; if (!(c.score >= 300 && c.score <= 900)) { toast('Enter a score between 300 and 900 first.'); return; }
@@ -1398,7 +1581,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     bar.setAttribute('aria-label', 'Asset split: ' + label.join(', '));
   }
   function updateExtras() {
-    autoUtil(); refreshFlags();
+    autoUtil(); refreshFlags(); insRowButtons();
     if (!$('#nw-slot') || !$('#nw-slot').firstChild) return;
     var H = S.horizon, N = nwNumbers(), inv = sumBy(S.stocks, 'sip') + sumBy(S.mfs, 'sip'), dca = sumBy(S.crypto, 'dca'), emis = sumBy(S.debts, 'emi'), pr = S.profile;
     /* net worth */
@@ -1430,11 +1613,13 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     /* debt */
     var tot = N.debtNow, wr = tot > 0 ? S.debts.reduce(function (t, d) { return t + (d.rate || 0) * (d.balance || 0); }, 0) / tot : 0, base = N.dr;
     $('#db-big').textContent = big(tot); $('#db-delta').textContent = S.debts.length ? S.debts.length + (S.debts.length === 1 ? ' loan' : ' loans') + ' · average rate ' + wr.toFixed(1) + '%' : 'Nothing owed';
-    setTiles('db-tiles', [['Debt-free in', tot > 0 ? (base.never ? 'not at these EMIs' : durText(base.months)) : 'now', 'paying only your EMIs'], ['EMIs each month', rs(emis), pr.income > 0 ? (emis / pr.income * 100).toFixed(0) + '% of income' : 'add income on Overview'], ['Interest still to pay', big(base.interest), 'at these EMIs']]);
+    var noEmi = S.debts.some(function (d) { return d.balance > 0 && !(d.emi > 0); });
+    setTiles('db-tiles', [['Debt-free in', tot > 0 ? (base.never ? 'not at these EMIs' : durText(base.months)) : 'now', 'paying only your EMIs'], ['EMIs each month', rs(emis), pr.income > 0 ? (emis / pr.income * 100).toFixed(0) + '% of income' : 'add income on Overview'], ['Interest still to pay', noEmi ? '—' : big(base.interest), noEmi ? 'enter the missing EMIs' : 'at these EMIs']]);
     var Hd = clamp(Math.ceil(base.months / 12), 1, 30);
     $('#dbc-sub').textContent = 'Until about ' + (new Date().getFullYear() + Hd);
     var sA = []; for (var i = 0; i <= Hd; i++) sA.push(histAt(base, i));
-    if (tot > 0) lineChart($('#dbc-chart'), { H: Hd, aria: 'Remaining debt over time.', legend: $('#dbc-legend'), table: $('#dbc-table'), lead: 0, series: [{ name: 'Remaining debt at your EMIs', cls: 's5', vals: sA, area: true }] });
+    if (tot > 0 && noEmi) { $('#dbc-chart').replaceChildren(el('div', { class: 'empty', text: 'Some loans have no EMI yet, so a payoff path cannot be drawn. Enter the EMIs marked "Add EMI" above.' })); $('#dbc-legend').replaceChildren(); $('#dbc-table').replaceChildren(); }
+    else if (tot > 0) lineChart($('#dbc-chart'), { H: Hd, aria: 'Remaining debt over time.', legend: $('#dbc-legend'), table: $('#dbc-table'), lead: 0, series: [{ name: 'Remaining debt at your EMIs', cls: 's5', vals: sA, area: true }] });
     else { $('#dbc-chart').replaceChildren(el('div', { class: 'empty', text: 'Add a loan to see the payoff path.' })); $('#dbc-legend').replaceChildren(); $('#dbc-table').replaceChildren(); }
     renderTips(base, left);
     document.querySelectorAll('#db-rows [data-d]').forEach(function (c) { var x = S.debts.filter(function (k) { return k.id === c.getAttribute('data-d'); })[0]; if (x) c.textContent = durText(monthsLeft(x)); });
