@@ -166,13 +166,6 @@ h1 { margin: 0; font-size: 34px; line-height: 1.1; font-weight: 700; letter-spac
 #cibc-prev .ph, #cibd-prev .ph { padding: 0; }
 .chk { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; margin: 6px 0; }
 .note.warn { color: var(--bad, #d70015); }
-.cs-rows { list-style: none; margin: 8px 0 0; padding: 0; font-size: 13px; }
-.cs-rows li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-top: 1px dashed var(--line); }
-.cs-rows .amt { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
-.cs-chk { padding: 4px 16px 10px; }
-#cs-out .tiles { padding: 0 16px 8px; }
-#cs-out .note { padding: 0 16px; }
-#cs-out .tip:first-of-type { margin-top: 4px; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 12px; }
 .btn.sm { font-size: 13px; padding: 7px 12px; white-space: normal; text-align: left; }
 .chat-log { padding: 4px 16px 12px; display: flex; flex-direction: column; gap: 10px; max-height: 56vh; overflow-y: auto; }
@@ -1120,7 +1113,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     return {
       today: today(), currency: 'INR', sample_data: !!S.demo, projection_years: S.horizon, scenario: S.scenario,
       totals: { assets: R(assets), debt: R(owed), net_worth: R(assets - owed), monthly_emis: R(sumBy(S.debts, 'emi')), monthly_sips: R(sumBy(S.stocks, 'sip') + sumBy(S.mfs, 'sip')) },
-      cash_flow: { income_per_month: R(S.profile.income), expenses_per_month: R(S.profile.expense), spare_cash: R(S.profile.cash), cash_kept_aside: R(S.profile.keep), pays_cards_in_full: !!S.profile.cardsFull },
+      cash_flow: { income_per_month: R(S.profile.income), expenses_per_month: R(S.profile.expense) },
       stocks_and_etfs: S.stocks.map(hold), mutual_funds: S.mfs.map(hold),
       epf: { balance: R(S.epf.balance), employee_per_month: R(S.epf.emp), employer_per_month: R(S.epf.empr), rate_pct: S.epf.rate, age: S.epf.age, retire_at: S.epf.retire },
       crypto: S.crypto.map(function (c) { return { name: c.name, value: R(c.value), monthly_buy: R(c.dca), assumed_return_pct: c.ret }; }),
@@ -1334,61 +1327,6 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     return el('div', { class: 'card' }, el('header', null, el('div', null, el('h2', { text: 'Upload your CIBIL report' }), el('p', { class: 'sub', text: 'Reads the PDF on this device. The file is never uploaded, and no name, PAN, address or account number is kept.' }))),
       el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Choose CIBIL PDF', onclick: function () { inp.click(); } }), inp), box);
   }
-  /* ---- Spare cash planner ---- */
-  var CASH_UNDO = null;
-  function planCash() {
-    var P = S.profile, total = Math.max(0, P.cash || 0), avail = Math.max(0, total - Math.max(0, P.keep || 0)), full = !!P.cardsFull;
-    var D = S.debts.filter(function (d) { return (d.balance || 0) > 0; }), paid = {}, steps = [];
-    function room(d) { return Math.max(0, d.balance - (paid[d.id] || 0)); }
-    function pay(d, amt) { amt = Math.min(Math.round(amt), room(d), avail); if (amt <= 0) return 0; paid[d.id] = (paid[d.id] || 0) + amt; avail -= amt; return amt; }
-    function isCard(d) { return d.type === 'Credit card'; }
-    var s1 = []; D.forEach(function (d) { if (d.od > 0) { var a = pay(d, d.od); if (a > 0) s1.push({ d: d, a: a }); } });
-    if (s1.length) steps.push({ l: 'urgent', pill: 'Overdue', t: 'Clear what is overdue first', b: 'A missed payment is the biggest drag on your credit score and adds late fees.', rows: s1 });
-    var cards = D.filter(function (d) { return isCard(d) && d.limit > 0; }), TL = cards.reduce(function (t, d) { return t + d.limit; }, 0), TB = cards.reduce(function (t, d) { return t + room(d); }, 0);
-    var need = Math.max(0, TB - 0.3 * TL), s2 = [];
-    cards.slice().sort(function (a, b) { return room(b) / b.limit - room(a) / a.limit; }).forEach(function (d) { if (need <= 0) return; var a = pay(d, Math.min(need, room(d))); if (a > 0) { s2.push({ d: d, a: a }); need -= a; } });
-    if (s2.length) steps.push({ l: full ? 'consider' : 'urgent', pill: full ? 'Score' : 'Cards', t: full ? 'Lower your card use to 30%' : 'Pay down the cards, most used first', b: full ? 'You pay cards in full, so this saves no interest, but it brings card use under the 30% lenders like to see.' : 'Cards usually charge the most interest. This also brings card use down towards the 30% lenders like to see.', rows: s2 });
-    var s3 = []; D.filter(function (d) { return !(full && isCard(d)); }).sort(function (a, b) { return (b.rate || 0) - (a.rate || 0); }).forEach(function (d) { var a = pay(d, room(d)); if (a > 0) s3.push({ d: d, a: a }); });
-    if (s3.length) steps.push({ l: 'next', pill: 'Highest rate', t: 'Put the rest on your highest-rate debt', b: 'Every rupee here saves the most interest. Loans can carry a prepayment charge, so check it before paying one off.', rows: s3 });
-    var used = Object.keys(paid).reduce(function (t, k) { return t + paid[k]; }, 0), keep = total - used;
-    var saved = 0, estimated = false, freed = 0, cleared = [];
-    D.forEach(function (d) { var a = paid[d.id] || 0; if (!a) return; if (!(full && isCard(d))) saved += a * (d.rate || 0) / 100; if ((d.est || []).indexOf('rate') >= 0 && !(full && isCard(d))) estimated = true; if (room(d) < 1) { cleared.push(d); freed += d.emi || 0; } });
-    var after = S.debts.map(function (d) { return { id: d.id, rate: d.rate, emi: d.emi, balance: Math.max(0, (d.balance || 0) - (paid[d.id] || 0)) }; });
-    var b0 = debtRun(S.debts, P.extra || 0, true), b1 = debtRun(after, P.extra || 0, true);
-    var tl = TL > 0 ? { before: Math.round(TB / TL * 100), after: Math.round((TB - cards.reduce(function (t, d) { return t + (paid[d.id] || 0); }, 0)) / TL * 100) } : null;
-    return { total: total, used: used, keep: keep, steps: steps, saved: saved, estimated: estimated, freed: freed, cleared: cleared, paid: paid, b0: b0, b1: b1, tl: tl, full: full };
-  }
-  function cashCard() {
-    var P = S.profile, ck = el('input', { type: 'checkbox', id: 'cs-full' }); ck.checked = !!P.cardsFull;
-    ck.addEventListener('change', function () { P.cardsFull = ck.checked; touch(); updateExtras(); });
-    return el('div', { class: 'card', id: 'cs-card' }, el('header', null, el('div', null, el('h2', { text: 'Use your spare cash' }), el('p', { class: 'sub', text: 'Enter what you could put towards debt and see where it does the most good.' }))),
-      el('div', { class: 'fgrid' }, el('label', { class: 'fld' }, el('span', { text: 'Spare cash today' }), fieldInput(P, 'cash', { type: 'money', min: 0, label: 'Spare cash today' })), el('label', { class: 'fld' }, el('span', { text: 'Keep aside as a buffer' }), fieldInput(P, 'keep', { type: 'money', min: 0, label: 'Keep aside as a buffer' }))),
-      el('label', { class: 'chk cs-chk' }, ck, ' I pay my card statements in full every month (so cards cost me no interest)'),
-      el('div', { id: 'cs-out' }));
-  }
-  function cashPlan() {
-    var out = $('#cs-out'); if (!out) return; out.replaceChildren();
-    var P = S.profile; if (!(P.cash > 0)) { out.append(el('p', { class: 'note', text: S.debts.some(function (d) { return d.balance > 0; }) ? 'Type an amount above to see a plan.' : 'Add your loans and cards first, or upload your CIBIL report.' })); return; }
-    var r = planCash();
-    if (!r.steps.length) { out.append(el('p', { class: 'note', text: r.keep >= r.total ? 'Nothing to pay: everything is kept aside, or no debt has a balance.' : 'Nothing to pay.' })); return; }
-    var tiles = el('div', { class: 'tiles' }, tile('Towards debt', rs(r.used), 'of ' + rs(r.total) + (r.keep > 0 ? ', ' + rs(r.keep) + ' kept' : '')), tile('Interest saved', rs(Math.round(r.saved)) + ' a year', r.estimated ? 'rates marked "estimated" are guesses' : 'at your rates'));
-    var ex = [];
-    if (r.tl) ex.push(tile('Card use', r.tl.before + '% to ' + r.tl.after + '%', r.tl.after <= 30 ? 'at or under the 30% target' : 'target is under 30%'));
-    if (r.freed > 0) ex.push(tile('EMIs freed', rs(r.freed) + ' a month', r.cleared.length + (r.cleared.length > 1 ? ' debts' : ' debt') + ' fully cleared'));
-    var d0 = r.b0, d1 = r.b1; if (!d0.never && !d1.never && d0.months > d1.months) ex.push(tile('Debt-free', durText(d1.months), (d0.months - d1.months) + ' months sooner, ' + big(Math.max(0, d0.interest - d1.interest)) + ' less interest in all'));
-    out.append(tiles); if (ex.length) out.append(el('div', { class: 'tiles' }, ex));
-    r.steps.forEach(function (s, i) {
-      out.append(el('div', { class: 'tip' }, el('span', { class: 'pill ' + s.l, text: s.pill }), el('div', { class: 'tipb' }, el('b', { text: (i + 1) + '. ' + s.t }), el('p', { text: s.b }),
-        el('ul', { class: 'cs-rows' }, s.rows.map(function (x) { var left = Math.max(0, x.d.balance - x.a); return el('li', null, el('span', { text: x.d.name }), el('span', { class: 'amt', text: rs(x.a) + (left < 1 ? ' · cleared' : ' · ' + rs(left) + ' left') })); })))));
-    });
-    out.append(el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Apply these payments', onclick: applyCash }), el('p', { class: 'note', text: 'Lowers the balances above by these amounts and takes them off your spare cash. You can undo it right after.' })));
-  }
-  function applyCash() {
-    var r = planCash(); if (!r.used) return; var snap = S.debts.map(function (d) { return { d: d, b: d.balance, od: d.od }; }), cash0 = S.profile.cash;
-    S.debts.forEach(function (d) { var a = r.paid[d.id] || 0; if (!a) return; d.balance = Math.max(0, Math.round(d.balance - a)); if (d.od > 0) d.od = Math.max(0, d.od - a); if (d.balance < 1) d.balance = 0; });
-    S.profile.cash = Math.max(0, Math.round(cash0 - r.used)); touch(); renderAll();
-    toast('Applied ' + rs(r.used) + ' to your debts.', { label: 'Undo', run: function () { snap.forEach(function (x) { x.d.balance = x.b; x.d.od = x.od; }); S.profile.cash = cash0; touch(); renderAll(); } });
-  }
   function debtFlags(d) {
     var f = [], e = d.est || [];
     if (e.indexOf('rate') >= 0) f.push('Rate estimated'); if (e.indexOf('emi') >= 0) f.push('EMI estimated'); else if (!(d.emi > 0) && d.balance > 0) f.push('Add EMI');
@@ -1428,12 +1366,11 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
         cols: [{ k: 'value', label: 'Value today', type: 'money', min: 0 }, { k: 'dca', label: 'Monthly buy', type: 'money', min: 0 }, { k: 'ret', label: 'Return % / yr', type: 'pct', min: 0, max: 40 }],
         derived: { label: 'In ' + S.horizon + ' yrs' }, make: function () { return { id: uid(), name: 'Bitcoin', value: 0, dca: 0, ret: 20 }; } }),
       note('Returns here are your guesses and are capped at 40%. Crypto is very volatile, so many planners keep it to 5% of net worth or less. Profits are taxed at a flat 30% in India plus 1% TDS on sales.'));
-    var db = $('#view-debt'); db.replaceChildren(heroEl('db', 'Total debt'), el('div', { class: 'tiles', id: 'db-tiles' }), el('div', { class: 'card', id: 'db-tips' }), cashCard(), cibilCard('cibd'),
+    var db = $('#view-debt'); db.replaceChildren(heroEl('db', 'Total debt'), el('div', { class: 'tiles', id: 'db-tiles' }), el('div', { class: 'card', id: 'db-tips' }), cibilCard('cibd'),
       listCard({ id: 'db', title: 'Loans and cards', nameLabel: 'Lender', arr: function () { return S.debts; }, empty: 'No loans or card balances. Add one to see when you will be debt-free.', addLabel: 'Add a loan',
         cols: [{ k: 'type', label: 'Type', type: 'select', opts: DEBT_TYPES }, { k: 'rate', label: 'Rate % / yr', type: 'pct', min: 0, max: 60 }, { k: 'balance', label: 'Outstanding', type: 'money', min: 0 }, { k: 'emi', label: 'EMI / month', type: 'money', min: 0 }, { k: 'limit', label: 'Card limit', type: 'money', min: 0 }],
         derived: { label: 'Debt-free in' }, make: function () { return { id: uid(), name: 'New loan', type: 'Personal loan', rate: 12, balance: 0, emi: 0, limit: 0 }; } }),
-      formCard('Pay it off faster', 'Put extra money towards the highest-rate loan. When a loan clears, its EMI moves to the next one.', S.profile, [{ k: 'extra', label: 'Extra payment / month', type: 'money', min: 0 }]),
-      el('div', { class: 'tiles', id: 'db-cmp' }), chartCard('dbc', 'Balance over time', ''), el('div', { class: 'card', id: 'db-order' }));
+      chartCard('dbc', 'Balance over time', ''), el('div', { class: 'card', id: 'db-order' }));
     var cb = $('#view-credit'); cb.replaceChildren(el('div', { class: 'hero' }, el('p', { class: 'eyebrow', text: 'Credit score' }), el('div', { class: 'bignum', id: 'cb-big' }), el('p', { class: 'delta', id: 'cb-delta' })),
       el('div', { class: 'tiles', id: 'cb-tiles' }), cibilCard('cibc'),
       formCard('Your credit report', 'Upload the PDF above, or type the numbers from any bureau. Utilisation updates by itself once your cards have limits on the Debt tab.', S.cibil, [
@@ -1461,7 +1398,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     bar.setAttribute('aria-label', 'Asset split: ' + label.join(', '));
   }
   function updateExtras() {
-    autoUtil(); refreshFlags(); cashPlan();
+    autoUtil(); refreshFlags();
     if (!$('#nw-slot') || !$('#nw-slot').firstChild) return;
     var H = S.horizon, N = nwNumbers(), inv = sumBy(S.stocks, 'sip') + sumBy(S.mfs, 'sip'), dca = sumBy(S.crypto, 'dca'), emis = sumBy(S.debts, 'emi'), pr = S.profile;
     /* net worth */
@@ -1491,15 +1428,13 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     document.querySelectorAll('#cr-rows [data-d]').forEach(function (c) { var x = S.crypto.filter(function (k) { return k.id === c.getAttribute('data-d'); })[0]; if (!x) return; var sim = simulate({ value: x.value, sip: x.dca, step: 0, years: 99, ret: x.ret }, H, 0); c.setAttribute('data-label', 'In ' + H + ' yrs'); c.textContent = rs(sim.val[H]); });
     var gh = document.querySelector('#view-crypto .ghead'); if (gh && gh.children.length > 1) gh.children[gh.children.length - 2].textContent = 'In ' + H + ' yrs';
     /* debt */
-    var tot = N.debtNow, wr = tot > 0 ? S.debts.reduce(function (t, d) { return t + (d.rate || 0) * (d.balance || 0); }, 0) / tot : 0, base = N.dr, fast = debtRun(S.debts, pr.extra || 0, true);
+    var tot = N.debtNow, wr = tot > 0 ? S.debts.reduce(function (t, d) { return t + (d.rate || 0) * (d.balance || 0); }, 0) / tot : 0, base = N.dr;
     $('#db-big').textContent = big(tot); $('#db-delta').textContent = S.debts.length ? S.debts.length + (S.debts.length === 1 ? ' loan' : ' loans') + ' · average rate ' + wr.toFixed(1) + '%' : 'Nothing owed';
     setTiles('db-tiles', [['Debt-free in', tot > 0 ? (base.never ? 'not at these EMIs' : durText(base.months)) : 'now', 'paying only your EMIs'], ['EMIs each month', rs(emis), pr.income > 0 ? (emis / pr.income * 100).toFixed(0) + '% of income' : 'add income on Overview'], ['Interest still to pay', big(base.interest), 'at these EMIs']]);
-    var sc = base.never || fast.never ? null : { m: base.months - fast.months, i: base.interest - fast.interest };
-    setTiles('db-cmp', tot > 0 ? [['With extra and rollover', fast.never ? 'not at these EMIs' : durText(fast.months), sc && (pr.extra || 0) > 0 ? sc.m + ' months sooner' : 'EMIs roll over as loans clear'], ['Interest saved', sc ? big(sc.i) : '—', (pr.extra || 0) > 0 ? 'with ' + rs(pr.extra) + ' extra each month' : 'set an extra amount above']] : []);
-    var Hd = clamp(Math.ceil(Math.max(base.months, fast.months) / 12), 1, 30);
+    var Hd = clamp(Math.ceil(base.months / 12), 1, 30);
     $('#dbc-sub').textContent = 'Until about ' + (new Date().getFullYear() + Hd);
-    var sA = [], sB = []; for (var i = 0; i <= Hd; i++) { sA.push(histAt(base, i)); sB.push(histAt(fast, i)); }
-    if (tot > 0) lineChart($('#dbc-chart'), { H: Hd, aria: 'Remaining debt over time.', legend: $('#dbc-legend'), table: $('#dbc-table'), lead: 0, series: [{ name: 'Paying only EMIs', cls: 's5', vals: sA, area: true }].concat((pr.extra || 0) > 0 ? [{ name: 'With extra and rollover', cls: 's3', vals: sB }] : []) });
+    var sA = []; for (var i = 0; i <= Hd; i++) sA.push(histAt(base, i));
+    if (tot > 0) lineChart($('#dbc-chart'), { H: Hd, aria: 'Remaining debt over time.', legend: $('#dbc-legend'), table: $('#dbc-table'), lead: 0, series: [{ name: 'Remaining debt at your EMIs', cls: 's5', vals: sA, area: true }] });
     else { $('#dbc-chart').replaceChildren(el('div', { class: 'empty', text: 'Add a loan to see the payoff path.' })); $('#dbc-legend').replaceChildren(); $('#dbc-table').replaceChildren(); }
     renderTips(base, left);
     document.querySelectorAll('#db-rows [data-d]').forEach(function (c) { var x = S.debts.filter(function (k) { return k.id === c.getAttribute('data-d'); })[0]; if (x) c.textContent = durText(monthsLeft(x)); });
