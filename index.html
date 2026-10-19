@@ -173,6 +173,17 @@ h1 { margin: 0; font-size: 34px; line-height: 1.1; font-weight: 700; letter-spac
 #cs-out .tiles { padding: 0 16px 8px; }
 #cs-out .note { padding: 0 16px; }
 #cs-out .tip:first-of-type { margin-top: 4px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 12px; }
+.btn.sm { font-size: 13px; padding: 7px 12px; white-space: normal; text-align: left; }
+.chat-log { padding: 4px 16px 12px; display: flex; flex-direction: column; gap: 10px; max-height: 56vh; overflow-y: auto; }
+.msg { max-width: 92%; padding: 10px 13px; border-radius: 16px; font-size: 14.5px; line-height: 1.5; overflow-wrap: anywhere; }
+.msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 5px; white-space: pre-wrap; }
+.msg.bot { align-self: flex-start; background: var(--fill); border-bottom-left-radius: 5px; }
+.msg.err { align-self: flex-start; color: var(--loss); background: color-mix(in srgb, var(--loss) 10%, transparent); }
+.msg p { margin: 0 0 8px; } .msg p:last-child { margin-bottom: 0; } .msg ul { margin: 4px 0 8px; padding-left: 20px; }
+.chat-bar { display: flex; gap: 8px; padding: 0 16px 14px; align-items: flex-end; }
+.chat-in { flex: 1; min-width: 0; min-height: 44px; resize: vertical; font: inherit; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; }
 .chip { border-radius: 6px; padding: 1px 6px; font-size: 11px; font-weight: 600; background: var(--warn-bg); color: var(--warn); }
 .up { color: var(--gain); font-weight: 600; } .down { color: var(--loss); font-weight: 600; }
 .proj { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -296,6 +307,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
       <button role="tab" type="button" id="tab-debt" data-tab="debt" aria-selected="false">Debt</button>
       <button role="tab" type="button" id="tab-credit" data-tab="credit" aria-selected="false">Credit</button>
       <button role="tab" type="button" id="tab-insurance" data-tab="insurance" aria-selected="false">Insurance</button>
+      <button role="tab" type="button" id="tab-ask" data-tab="ask" aria-selected="false">Ask</button>
     </div>
   </div>
 
@@ -310,6 +322,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     <section id="view-debt" role="tabpanel" aria-labelledby="tab-debt" hidden></section>
     <section id="view-credit" role="tabpanel" aria-labelledby="tab-credit" hidden></section>
     <section id="view-insurance" role="tabpanel" aria-labelledby="tab-insurance" hidden></section>
+    <section id="view-ask" role="tabpanel" aria-labelledby="tab-ask" hidden></section>
   </main>
 
   <footer class="foot">
@@ -411,7 +424,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
       ]
     };
   }
-  var S = { stocks: [], mfs: [], horizon: 10, scenario: 'base', asOf: '', demo: true, source: '', epf: { balance: 0, emp: 0, empr: 0, rate: 8.25, age: 30, retire: 60, raise: 0 }, crypto: [], debts: [], cibil: { score: 0, date: '', util: 0, enq: 0, missed: 0, history: [] }, ins: [], profile: { income: 0, expense: 0, extra: 0 } };
+  var S = { stocks: [], mfs: [], horizon: 10, scenario: 'base', asOf: '', demo: true, source: '', epf: { balance: 0, emp: 0, empr: 0, rate: 8.25, age: 30, retire: 60, raise: 0 }, crypto: [], debts: [], cibil: { score: 0, date: '', util: 0, enq: 0, missed: 0, history: [] }, ins: [], profile: { income: 0, expense: 0, extra: 0 }, settings: {} };
   (function () { var d = sampleData(); S.stocks = d.stocks; S.mfs = d.mfs; })();
   var ENV = { db: null, ref: null, dbState: 'pending' }; // pending | ok | none
 
@@ -445,7 +458,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
   function setSaveState(t) { $('#saveState').textContent = t; }
   function payload() {
     return JSON.parse(JSON.stringify({
-      v: 2, rev: lastRev, stocks: S.stocks, mfs: S.mfs, epf: S.epf, crypto: S.crypto, debts: S.debts, cibil: S.cibil, ins: S.ins, profile: S.profile, horizon: S.horizon, scenario: S.scenario,
+      v: 2, rev: lastRev, stocks: S.stocks, mfs: S.mfs, epf: S.epf, crypto: S.crypto, debts: S.debts, cibil: S.cibil, ins: S.ins, profile: S.profile, settings: S.settings, horizon: S.horizon, scenario: S.scenario,
       asOf: S.asOf, source: S.source, updatedAt: new Date().toISOString()
     }));
   }
@@ -468,7 +481,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     S.epf = Object.assign({ balance: 0, emp: 0, empr: 0, rate: 8.25, age: 30, retire: 60, raise: 0 }, d.epf || {});
     S.crypto = Array.isArray(d.crypto) ? d.crypto : []; S.debts = Array.isArray(d.debts) ? d.debts : []; S.ins = Array.isArray(d.ins) ? d.ins : [];
     S.cibil = Object.assign({ score: 0, date: '', util: 0, enq: 0, missed: 0, history: [] }, d.cibil || {}); if (!Array.isArray(S.cibil.history)) S.cibil.history = [];
-    S.profile = Object.assign({ income: 0, expense: 0, extra: 0 }, d.profile || {});
+    S.profile = Object.assign({ income: 0, expense: 0, extra: 0 }, d.profile || {}); S.settings = d.settings && typeof d.settings === 'object' ? d.settings : {};
     S.horizon = HORIZONS.indexOf(d.horizon) >= 0 ? d.horizon : 10;
     S.scenario = SCEN[d.scenario] != null ? d.scenario : 'base';
     S.asOf = d.asOf || ''; S.source = d.source || ''; S.demo = false;
@@ -880,8 +893,8 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     }
     if (!S.demo && ENV.ref && !dirty && !saving) setSaveState('');
   }
-  var TABS = ['overview', 'stocks', 'mutual-funds', 'epf', 'crypto', 'debt', 'credit', 'insurance'];
-  var VIEW = { overview: '#view-overview', stocks: '#view-st', 'mutual-funds': '#view-mf', epf: '#view-epf', crypto: '#view-crypto', debt: '#view-debt', credit: '#view-credit', insurance: '#view-insurance' };
+  var TABS = ['overview', 'stocks', 'mutual-funds', 'epf', 'crypto', 'debt', 'credit', 'insurance', 'ask'];
+  var VIEW = { overview: '#view-overview', stocks: '#view-st', 'mutual-funds': '#view-mf', epf: '#view-epf', crypto: '#view-crypto', debt: '#view-debt', credit: '#view-credit', insurance: '#view-insurance', ask: '#view-ask' };
   function applyTab() {
     var hash = (location.hash || '').replace('#', ''), tab = TABS.indexOf(hash) >= 0 ? hash : 'overview';
     document.querySelectorAll('[role="tab"]').forEach(function (t) { var on = t.getAttribute('data-tab') === tab; t.setAttribute('aria-selected', String(on)); if (on) { try { t.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (e) {} } });
@@ -1097,6 +1110,94 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
 
   /* builders (structure; run when data is loaded or replaced) */
   var DEBT_TYPES = ['Home loan', 'Car loan', 'Personal loan', 'Credit card', 'Education loan', 'Gold loan', 'Consumer loan', 'Two-wheeler loan', 'Other'];
+  /* ---- Ask Claude (your own API key, same approach as Health Ledger) ---- */
+  var CHAT = [], CHAT_BUSY = false, CLAUDE_MODEL = 'claude-sonnet-5-5';
+  var ASK_IDEAS = ['I have ₹1,54,000 spare. How should I use it?', 'Which debt should I clear first?', 'How do I get my credit score above 750?', 'Can I afford to raise my SIP?', 'Am I saving enough for retirement?'];
+  function finContext() {
+    var R = function (n) { return Math.round(n || 0); };
+    var hold = function (x) { return { name: x.name, value: R(x.value), invested: R(x.cost), monthly_sip: R(x.sip), yearly_stepup_pct: x.step, sip_years: x.years, assumed_return_pct: x.ret }; };
+    var assets = sumBy(S.stocks, 'value') + sumBy(S.mfs, 'value') + (S.epf.balance || 0) + sumBy(S.crypto, 'value'), owed = sumBy(S.debts, 'balance');
+    return {
+      today: today(), currency: 'INR', sample_data: !!S.demo, projection_years: S.horizon, scenario: S.scenario,
+      totals: { assets: R(assets), debt: R(owed), net_worth: R(assets - owed), monthly_emis: R(sumBy(S.debts, 'emi')), monthly_sips: R(sumBy(S.stocks, 'sip') + sumBy(S.mfs, 'sip')) },
+      cash_flow: { income_per_month: R(S.profile.income), expenses_per_month: R(S.profile.expense), spare_cash: R(S.profile.cash), cash_kept_aside: R(S.profile.keep), pays_cards_in_full: !!S.profile.cardsFull },
+      stocks_and_etfs: S.stocks.map(hold), mutual_funds: S.mfs.map(hold),
+      epf: { balance: R(S.epf.balance), employee_per_month: R(S.epf.emp), employer_per_month: R(S.epf.empr), rate_pct: S.epf.rate, age: S.epf.age, retire_at: S.epf.retire },
+      crypto: S.crypto.map(function (c) { return { name: c.name, value: R(c.value), monthly_buy: R(c.dca), assumed_return_pct: c.ret }; }),
+      debts: S.debts.map(function (d) { var e = d.est || []; return { name: d.name, type: d.type, rate_pct: d.rate, rate_is_estimate: e.indexOf('rate') >= 0, balance: R(d.balance), emi_per_month: R(d.emi), emi_is_estimate: e.indexOf('emi') >= 0, card_limit: d.limit > 0 ? R(d.limit) : undefined, overdue_amount: d.od > 0 ? R(d.od) : undefined }; }),
+      credit: { score: S.cibil.score || null, as_of: S.cibil.date || null, card_utilisation_pct: S.cibil.util, enquiries_last_2_years: S.cibil.enq, late_payment_months: S.cibil.missed },
+      insurance: S.ins.map(function (p) { return { name: p.name, type: p.type, cover: R(p.cover), premium_per_year: R(p.premium), renews: p.renews || null }; })
+    };
+  }
+  var ASK_SYSTEM = 'You are the money assistant inside one person\'s personal wealth dashboard in India. The JSON below is their current dashboard data; amounts are in rupees. Use it and do not invent figures. Show the arithmetic briefly. Use Indian conventions (₹, lakh, crore). If a rate or EMI is marked as an estimate, say the answer depends on it and tell them to enter the real figure. If an important fact is missing (for example whether they pay cards in full), state your assumption or ask one short question. Be concise: short paragraphs or a few bullets, no headings. You are not a licensed adviser: give the numbers and the trade-offs, not guarantees, and mention prepayment charges, tax or lock-ins when they matter. If sample_data is true, say the numbers are sample data. Never ask for PAN, account numbers or passwords.\n\nDASHBOARD DATA:\n';
+  function claudeAsk() {
+    var key = S.settings.anthropic_key; if (!key) return Promise.reject({ message: 'Add your Claude API key first.' });
+    var msgs = []; CHAT.forEach(function (m) { if (m.role !== 'user' && m.role !== 'assistant') return; var l = msgs[msgs.length - 1]; if (l && l.role === m.role) l.content += '\n\n' + m.content; else msgs.push({ role: m.role, content: m.content }); });
+    msgs = msgs.slice(-12); while (msgs.length && msgs[0].role !== 'user') msgs.shift();
+    return fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 1200, system: ASK_SYSTEM + JSON.stringify(finContext()), messages: msgs }) })
+      .catch(function () { throw { message: 'Could not reach Claude. Check your internet connection.' }; })
+      .then(function (res) { return res.json().catch(function () { return {}; }).then(function (j) {
+        if (!res.ok) {
+          var m = (j && j.error && j.error.message) || '';
+          if (/credit balance/i.test(m)) throw { message: 'Your Claude API credit has run out. Top up at console.anthropic.com under Settings, Billing, in the same account the key was made in.' };
+          throw { message: res.status === 401 ? 'Claude rejected the API key. Remove it and add it again.' : res.status === 429 ? 'Claude is rate-limiting this key. Wait a minute and try again.' : res.status === 529 ? 'Claude is busy right now. Try again in a minute.' : (m || 'Claude error ' + res.status) };
+        }
+        var t = (j.content || []).filter(function (b) { return b.type === 'text'; }).map(function (b) { return b.text; }).join('');
+        return (t || 'No answer came back.') + (j.stop_reason === 'max_tokens' ? '\n\n(The answer was cut off. Ask me to continue.)' : '');
+      }); });
+  }
+  function mdLite(text) {
+    var box = el('div', { class: 'md' }), list = null;
+    function inline(s) { var f = document.createDocumentFragment(); s.split(/(\*\*[^*]+\*\*)/).forEach(function (p) { if (/^\*\*[^*]+\*\*$/.test(p)) f.append(el('b', { text: p.slice(2, -2) })); else if (p) f.append(document.createTextNode(p)); }); return f; }
+    String(text).split('\n').forEach(function (ln) {
+      var t = ln.trim(), m = /^([-*•]|\d+[.)])\s+(.*)$/.exec(t);
+      if (m) { if (!list) { list = el('ul'); box.append(list); } var li = el('li'); li.append(inline(m[2])); list.append(li); }
+      else { list = null; if (t) { var p = el('p'); p.append(inline(t.replace(/^#+\s*/, ''))); box.append(p); } }
+    });
+    return box;
+  }
+  function renderChat() {
+    var log = $('#chat-log'); if (!log) return; log.replaceChildren();
+    if (!CHAT.length) log.append(el('p', { class: 'note', text: 'Ask anything about your money. I read the numbers on your dashboard each time you ask.' }));
+    CHAT.forEach(function (m) {
+      if (m.role === 'user') log.append(el('div', { class: 'msg user', text: m.content }));
+      else if (m.role === 'assistant') log.append(el('div', { class: 'msg bot' }, mdLite(m.content)));
+      else log.append(el('div', { class: 'msg err', text: m.content }));
+    });
+    if (CHAT_BUSY) log.append(el('div', { class: 'msg bot', text: 'Thinking…' }));
+    log.scrollTop = log.scrollHeight;
+    var b = $('#chat-send'); if (b) b.disabled = CHAT_BUSY;
+  }
+  function sendChat(q) {
+    q = (q || '').trim(); if (!q || CHAT_BUSY) return; CHAT.push({ role: 'user', content: q }); CHAT_BUSY = true; renderChat();
+    claudeAsk().then(function (t) { CHAT.push({ role: 'assistant', content: t }); }).catch(function (e) { CHAT.push({ role: 'error', content: (e && e.message) || 'Something went wrong.' }); })
+      .then(function () { CHAT_BUSY = false; renderChat(); });
+  }
+  function buildAsk() {
+    var v = $('#view-ask'); if (!v) return; v.replaceChildren();
+    var key = S.settings.anthropic_key;
+    if (!key) {
+      var inp = el('input', { class: 'in', type: 'password', autocomplete: 'off', placeholder: 'sk-ant-…', 'aria-label': 'Claude API key', id: 'akey' }), msg = el('p', { class: 'note warn', id: 'akey-msg', hidden: true });
+      v.append(el('div', { class: 'hero' }, el('p', { class: 'eyebrow', text: 'Ask' }), el('div', { class: 'bignum', text: 'Ask Claude' }), el('p', { class: 'delta', text: 'About your own numbers' })),
+        el('div', { class: 'card' }, el('header', null, el('div', null, el('h2', { text: 'Connect your Claude key' }), el('p', { class: 'sub', text: 'Questions are answered by Claude using your own Anthropic API key. The key is saved in your private database (only your login can read it) and is sent only to Anthropic. Create one at console.anthropic.com under API keys. Each question costs a few cents.' }))),
+          el('div', { class: 'fgrid' }, el('label', { class: 'fld' }, el('span', { text: 'API key' }), inp)),
+          msg, el('div', { class: 'addrow solo' }, el('button', { class: 'btn', type: 'button', text: 'Save key', onclick: function () {
+            var k = inp.value.trim(); if (!/^sk-ant-/.test(k)) { msg.textContent = 'That does not look like an Anthropic key. It starts with sk-ant-.'; msg.hidden = false; return; }
+            S.settings.anthropic_key = k; touch(); buildAsk(); } }))));
+      return;
+    }
+    var ta = el('textarea', { class: 'in chat-in', rows: '2', placeholder: 'Ask about your money…', 'aria-label': 'Your question', id: 'chat-in' });
+    function go() { var q = ta.value; if (!q.trim() || CHAT_BUSY) return; ta.value = ''; sendChat(q); }
+    ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && window.matchMedia('(hover: hover)').matches) { e.preventDefault(); go(); } });
+    v.append(el('div', { class: 'hero' }, el('p', { class: 'eyebrow', text: 'Ask' }), el('div', { class: 'bignum', text: 'Ask Claude' }), el('p', { class: 'delta', text: 'Answers use the numbers on your dashboard' })),
+      el('div', { class: 'card' }, el('header', null, el('div', null, el('h2', { text: 'Your questions' }), el('p', { class: 'sub', text: 'Not licensed financial advice. Your dashboard numbers are sent to Anthropic when you ask. Nothing else is shared.' }))),
+        el('div', { class: 'chips' }, ASK_IDEAS.map(function (q) { return el('button', { class: 'btn tint sm', type: 'button', text: q, onclick: function () { sendChat(q); } }); })),
+        el('div', { class: 'chat-log', id: 'chat-log', role: 'log', 'aria-live': 'polite' }),
+        el('div', { class: 'chat-bar' }, ta, el('button', { class: 'btn', type: 'button', id: 'chat-send', text: 'Send', onclick: go }))),
+      el('p', { class: 'note' }, 'Key saved (…' + key.slice(-4) + '). ', el('button', { class: 'linkbtn', type: 'button', text: 'Remove key', onclick: function () { S.settings.anthropic_key = ''; touch(); buildAsk(); } }), CHAT.length ? ' ' : '', CHAT.length ? el('button', { class: 'linkbtn', type: 'button', text: 'Clear chat', onclick: function () { CHAT = []; renderChat(); } }) : ''));
+    renderChat();
+  }
   /* ---- CIBIL upload ---- */
   var PDFJS_V = '3.11.174', PDFJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/' + PDFJS_V + '/';
   var cibilPending = null;
@@ -1343,7 +1444,7 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
       listCard({ id: 'in', title: 'Policies', nameLabel: 'Policy', arr: function () { return S.ins; }, empty: 'No policies yet. Add your term, health and motor cover.', addLabel: 'Add a policy',
         cols: [{ k: 'insurer', label: 'Insurer', type: 'text' }, { k: 'type', label: 'Type', type: 'select', opts: INS_TYPES }, { k: 'cover', label: 'Cover', type: 'money', min: 0 }, { k: 'premium', label: 'Premium / yr', type: 'money', min: 0 }, { k: 'renews', label: 'Renews on', type: 'date' }],
         derived: { label: 'Status' }, make: function () { return { id: uid(), name: 'New policy', insurer: '', type: 'Term life', cover: 0, premium: 0, renews: '' }; } }));
-    syncControls(); updateExtras();
+    buildAsk(); syncControls(); updateExtras();
   }
   function saveReading() {
     var c = S.cibil; if (!(c.score >= 300 && c.score <= 900)) { toast('Enter a score between 300 and 900 first.'); return; }
