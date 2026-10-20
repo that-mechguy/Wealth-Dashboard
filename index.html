@@ -282,7 +282,16 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     <label>Password<input id="lgPass" type="password" autocomplete="current-password" required></label>
     <button class="btn pri" type="submit">Sign in</button>
     <button class="btn" id="lgUp" type="button">Create account</button>
+    <button class="btn linkbtn" id="lgForgot" type="button">Forgot password?</button>
     <p class="sub" id="lgMsg" role="status" aria-live="polite"></p>
+  </form>
+  <form id="rcForm" class="card lgcard" hidden>
+    <h1>New password</h1>
+    <p class="sub">Choose a new password for your account.</p>
+    <label>New password<input id="rcPass" type="password" autocomplete="new-password" minlength="6" required></label>
+    <label>Repeat it<input id="rcPass2" type="password" autocomplete="new-password" minlength="6" required></label>
+    <button class="btn pri" type="submit">Save password</button>
+    <p class="sub" id="rcMsg" role="status" aria-live="polite"></p>
   </form>
 </div>
 <div id="appRoot" hidden>
@@ -521,11 +530,14 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
   function initAuth() {
     var c = window.WEALTH_CONFIG || {};
     if (!window.supabase || !c.supabaseUrl) { showLogin('The sign-in service did not load. Check your connection and reload.'); return; }
+    var RECOVERY = /type=recovery/.test(location.hash || '') || /type=recovery/.test(location.search || '');
     SB = window.supabase.createClient(c.supabaseUrl, c.supabaseAnonKey);
+    function showRecovery() { RECOVERY = true; $('#login').hidden = false; $('#appRoot').hidden = true; $('#lgForm').hidden = true; $('#rcForm').hidden = false; }
     SB.auth.getSession().then(function (r) {
+      if (RECOVERY && r.data && r.data.session) { showRecovery(); return; }
       if (r.data && r.data.session) startSession(r.data.session.user); else showLogin('');
     });
-    SB.auth.onAuthStateChange(function (ev, session) { if (ev === 'SIGNED_OUT') { USER = null; ENV.ref = null; showLogin(''); } });
+    SB.auth.onAuthStateChange(function (ev, session) { if (ev === 'PASSWORD_RECOVERY') { showRecovery(); return; } if (ev === 'SIGNED_OUT') { USER = null; ENV.ref = null; showLogin(''); } });
     function creds() { return { email: $('#lgEmail').value.trim(), password: $('#lgPass').value }; }
     function go(kind) {
       var cr = creds(); if (!cr.email || !cr.password) { $('#lgMsg').textContent = 'Enter your email and password.'; return; }
@@ -538,6 +550,24 @@ select.in, input[type="date"].in { text-align: left; font-family: inherit; color
     }
     $('#lgForm').addEventListener('submit', function (e) { e.preventDefault(); go('in'); });
     $('#lgUp').addEventListener('click', function () { go('up'); });
+    $('#lgForgot').addEventListener('click', function () {
+      var em = $('#lgEmail').value.trim(); if (!em) { $('#lgMsg').textContent = 'Type your email above, then tap Forgot password.'; return; }
+      $('#lgMsg').textContent = 'Sending…';
+      SB.auth.resetPasswordForEmail(em, { redirectTo: location.origin + location.pathname }).then(function (r) {
+        $('#lgMsg').textContent = r.error ? r.error.message : 'If that email has an account, a reset link is on its way. Open it on this device.';
+      });
+    });
+    $('#rcForm').addEventListener('submit', function (e) {
+      e.preventDefault(); var a = $('#rcPass').value, b = $('#rcPass2').value, m = $('#rcMsg');
+      if (a.length < 6) { m.textContent = 'Use at least 6 characters.'; return; }
+      if (a !== b) { m.textContent = 'The two passwords do not match.'; return; }
+      m.textContent = 'Saving…';
+      SB.auth.updateUser({ password: a }).then(function (r) {
+        if (r.error) { m.textContent = r.error.message; return; }
+        RECOVERY = false; history.replaceState(null, '', location.pathname); $('#rcForm').hidden = true; $('#lgForm').hidden = false;
+        SB.auth.getSession().then(function (x) { if (x.data && x.data.session) startSession(x.data.session.user); else showLogin('Password updated. Sign in.'); });
+      });
+    });
     $('#outBtn').addEventListener('click', function () { SB.auth.signOut(); });
     document.addEventListener('visibilitychange', function () { if (!document.hidden && USER) loadRemote(false); });
   }
